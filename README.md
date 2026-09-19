@@ -8,17 +8,36 @@ e pagamentos recebidos, para identificar correspondências e diferenças.
 
 ## Estado atual
 
-Etapa inicial: programa que exibe uma mensagem no terminal.
+Programa inicial de conferência de um pagamento, executado no terminal.
 
-Já praticado:
-- Criação e edição de código-fonte em COBOL.
-- Compilação com GnuCOBOL.
-- Execução de um programa no Linux.
-- Diferença entre código-fonte e executável.
-- Início do controle de versões com Git.
+Funcionalidades implementadas:
+- Recebe o nome do operador.
+- Calcula a diferença entre valor recebido e valor esperado.
+- Classifica o recebimento como igual, abaixo ou acima do esperado.
 
-A lógica de conciliação ainda não foi implementada.
+Regra adotada:
+
+Diferença = valor recebido - valor esperado.
+
+- Diferença positiva: valor recebido acima do esperado.
+- Diferença zero: pagamento conferido.
+- Diferença negativa: valor recebido abaixo do esperado.
+
+Os valores monetários ainda são definidos diretamente no código.
+A leitura de arquivos e a conciliação de vários pagamentos ainda
+não foram implementadas.
+
 O projeto é executado no Ubuntu, sem uso de ambiente mainframe.
+
+### Testes manuais realizados
+
+| Esperado | Recebido | Diferença | Resultado |
+|---|---|---|---|
+| 100,00 | 80,00 | -20,00 | Abaixo do esperado |
+| 100,00 | 100,00 | 0,00 | Pagamento conferido |
+| 100,00 | 120,00 | +20,00 | Acima do esperado |
+
+Os três cenários foram executados e apresentaram os resultados esperados.
 
 ## Ambiente utilizado
 
@@ -29,7 +48,7 @@ O projeto é executado no Ubuntu, sem uso de ambiente mainframe.
 
 ## Arquivos
 
-- `ola.cob`: código-fonte do programa inicial.
+- `ola.cob`: código-fonte da conferência inicial de um pagamento.
 - `.gitignore`: regras para ignorar arquivos gerados.
 - `README.md`: apresentação e instruções do projeto.
 
@@ -55,7 +74,15 @@ Execute:
 Saída esperada:
 
 ```text
+
 Sistema de conciliacao iniciado.
+Digite seu nome:
+Bruno
+Operador: Bruno
+Valor esperado: 00100.00
+Valor recebido: 00080.00
+Diferenca: -00020.00
+Status: valor recebido abaixo do esperado.
 ```
 
 Após alterar e salvar `ola.cob`, compile novamente para atualizar
@@ -63,10 +90,11 @@ o executável.
 
 ## Próximas etapas
 
-- Aprender variáveis e entrada de dados.
-- Comparar valores esperados e recebidos.
+- Receber os valores monetários pelo teclado.
+- Validar os dados informados.
+- Melhorar a apresentação dos valores.
 - Ler registros de arquivos.
-- Gerar um relatório com os resultados da conciliação.
+- Gerar um relatório de conciliação de vários pagamentos.
 
 ## Autor
 
