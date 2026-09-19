@@ -14,7 +14,7 @@ Funcionalidades implementadas:
 
 - Recebe o nome ou login do operador.
 - Solicita os valores esperado e recebido pelo teclado.
-- Valida as entradas antes de armazenar os valores numéricos.
+- Valida o formato e o limite dos valores antes da conversão.
 - Permite corrigir entradas inválidas sem reiniciar.
 - Preserva os campos já aceitos.
 - Calcula a diferença entre recebido e esperado.
@@ -37,48 +37,77 @@ Diferença = valor recebido - valor esperado
 | Zero | Pagamento conferido |
 | Negativa | Recebido abaixo do esperado |
 
-## Validações
+## Regras de entrada
 
-- Operador não pode ficar vazio ou conter apenas espaços.
-- Valores devem ser conversíveis em número.
+### Operador
+
+Aceita nome ou login preenchido, como `Bruno` ou `bruno.lopes`.
+
+Uma entrada vazia ou composta apenas por espaços gera uma mensagem
+e uma nova solicitação.
+
+### Valores monetários
+
 - Faixa permitida: 0 até 99999.99, inclusive.
-- No máximo dois dígitos após o ponto decimal.
-- Entradas inválidas geram uma mensagem e nova tentativa do mesmo campo.
+- Pelo menos um dígito antes do ponto.
+- Ponto decimal opcional.
+- Quando houver ponto, deve haver um ou dois dígitos depois dele.
+- Zeros à esquerda são aceitos.
+- Espaços nas extremidades são removidos.
+- Espaços internos, vírgulas, sinais, letras e outros símbolos
+  são rejeitados.
+- Entradas inválidas permitem nova tentativa do mesmo campo.
 
-Digite os valores usando ponto decimal e sem separador de milhares.
-Exemplos: `100`, `100.5` e `100.50`.
+| Formato | Exemplos |
+|---|---|
+| Inteiro | `0`, `100` |
+| Uma casa decimal | `100.5` |
+| Duas casas decimais | `0.50`, `100.50` |
+| Zeros à esquerda | `00100.50` |
+| Espaços nas extremidades | ` 100.50 ` |
+
+Exemplos rejeitados: `100,50`, `+100`, `-100`, `1 00.50`,
+`.50`, `100.`, `90.8.0` e `100.509`.
+
+A validação examina o texto armazenado no campo.
+Entradas acima da capacidade desse campo ainda precisam
+de tratamento específico.
 
 ## Organização do código
 
-A leitura dos campos utiliza `PERFORM UNTIL` para permitir
-novas tentativas.
+O fluxo principal recebe os dados, solicita correções,
+armazena os valores aceitos e apresenta o resultado.
 
 As regras monetárias são compartilhadas entre esperado e recebido.
 
 | Parágrafo | Responsabilidade |
 |---|---|
-| `validar-valor` | Verificar conversibilidade, faixa e casas decimais; converter o valor aceito |
-| `contar-casas-decimais` | Contar os dígitos após o ponto no texto de entrada |
+| `validar-formato` | Examinar os caracteres e contar dígitos inteiros e decimais |
+| `validar-valor` | Aplicar as verificações de formato, casas decimais, conversibilidade e limite; converter o valor aceito |
 
-O parágrafo `validar-valor` utiliza `contar-casas-decimais`.
+O parágrafo `validar-valor` chama `validar-formato`.
+
+A leitura dos campos utiliza `PERFORM UNTIL`.
+A escolha entre condições utiliza `EVALUATE TRUE`.
 
 ### Dados compartilhados pela validação
 
 | Variável | Finalidade |
 |---|---|
-| `entrada-validacao` | Texto que será validado |
-| `validacao-ok` | Resultado: 0 para inválido, 1 para válido |
+| `entrada-validacao` | Texto a validar, normalizado pela remoção de espaços nas extremidades |
+| `formato-ok` | Indica se a estrutura do texto é aceita |
+| `tamanho-entrada` | Comprimento do texto sem espaços nas extremidades |
+| `digitos-inteiros` | Quantidade de dígitos antes do ponto |
+| `casas-decimais` | Quantidade de dígitos após o ponto |
+| `encontrou-ponto` | Indica se o ponto já foi encontrado |
+| `validacao-ok` | Resultado final: 0 para inválido, 1 para válido |
 | `valor-validado` | Número convertido quando a validação passa |
 | `mensagem-erro` | Motivo da rejeição |
 
 Essas variáveis pertencem ao programa e são compartilhadas pelos
 parágrafos. Não constituem parâmetros formais de uma função.
 
-Cada chamada reinicializa seus resultados para evitar o
-reaproveitamento de informações de uma validação anterior.
-
-O fluxo principal exibe as mensagens e guarda o valor aceito
-no campo esperado ou recebido.
+Os resultados e contadores são reinicializados em cada validação.
 
 ## Ambiente
 
@@ -132,10 +161,10 @@ Digite o nome ou login do operador:
 bruno.lopes
 Operador: bruno.lopes
 Digite o valor esperado (exemplo: 100.50):
+100,50
+Erro no valor esperado: use digitos e ponto decimal, como 100.50.
+Digite o valor esperado (exemplo: 100.50):
 100.50
-Digite o valor recebido (exemplo: 80.25):
-abc
-Erro no valor recebido: informe um numero valido.
 Digite o valor recebido (exemplo: 80.25):
 90.80
 Valor esperado: 00100.50
@@ -153,55 +182,48 @@ Os testes utilizam dados fictícios.
 
 ### Cenários verificados em etapas anteriores
 
-| Cenário | Resultado |
-|---|---|
-| Esperado 100.50, recebido 90.80 | Diferença -9.70, abaixo |
-| Esperado 100.50, recebido 100.50 | Pagamento conferido |
-| Esperado 100.50, recebido 120.75 | Diferença +20.25, acima |
-| Esperado 0, recebido 99999.99 | Diferença +99999.99, acima |
-| Letras nos valores | Rejeitadas |
-| Valores -1 e 100000 nos dois campos | Rejeitados |
-| Valor 100.509 nos dois campos | Rejeitado |
-| Operador vazio ou apenas espaços | Nova tentativa |
-| Operador bruno.lopes | Aceito |
+- Classificação de valores iguais, abaixo e acima do esperado.
+- Limites monetários, incluindo 0 e 99999.99.
+- Rejeição de letras, valores negativos e valores acima do limite.
+- Rejeição de casas decimais extras.
+- Operador obrigatório.
+- Correção de entradas sem reiniciar.
+- Preservação dos campos já aceitos.
+- Reutilização da validação sem carregar resultados de chamadas anteriores.
+- Remoção de um bloco antigo que solicitava o recebido novamente.
 
-### Regressão após extração da contagem
+Esses cenários não foram todos reexecutados após cada alteração.
 
-Na mesma execução:
+### Formato monetário — etapa atual
 
-- Esperado: `100.509` seguido de `100.50`.
-- Recebido: `90.809` seguido de `90.80`.
-- Entradas inválidas rejeitadas e corrigidas.
-- Resultado final: diferença -9.70, abaixo do esperado.
-
-### Regressão após centralização da validação
-
-Na mesma execução:
+Primeira execução:
 
 | Campo | Sequência de tentativas |
 |---|---|
 | Operador | bruno.lopes |
-| Esperado | abc → -1 → 100.509 → 100.50 |
-| Recebido | abc → 100000 → 90.809 → 90.80 |
+| Esperado | 100,50 → 1 00.50 → .50 → 100.50 |
+| Recebido | 100. → 90.8.0 → 90.809 → 90.80 |
 
-As tentativas inválidas foram rejeitadas e as últimas foram aceitas,
-preservando os campos anteriores.
+Somente a última tentativa de cada valor foi aceita.
 
-Resultado final: diferença -9.70, abaixo do esperado.
+Resultado: diferença -9.70, abaixo do esperado.
 
-O teste também verificou que uma validação bem-sucedida do esperado
-não faz a rotina aceitar uma entrada inválida no recebido.
+Segunda execução:
+
+| Campo | Entrada | Resultado |
+|---|---|---|
+| Esperado | ` 00100.50 ` | Aceito como 100.50 |
+| Recebido | `+100.50` | Rejeitado, permitindo correção |
+| Recebido | `100.5` | Aceito como 100.50 |
+
+Resultado: diferença zero, pagamento conferido.
 
 Os testes são manuais. Não há cobertura exaustiva nem suíte
-automatizada. Os cenários de etapas anteriores não foram todos
-reexecutados após cada alteração.
+automatizada.
 
 ## Limitações
 
 - Apenas um pagamento por execução.
-- Formato monetário ainda não é estritamente validado:
-  utiliza as regras de conversão do GnuCOBOL, além das verificações
-  de faixa e casas decimais.
 - Sem tratamento específico para entradas acima da capacidade
   dos campos `PIC X(40)`.
 - Sem tratamento específico para fim da entrada padrão.
@@ -214,14 +236,17 @@ reexecutados após cada alteração.
 - Estrutura de um programa COBOL.
 - Campos com `PIC` e inicialização com `VALUE`.
 - Entrada e saída com `ACCEPT` e `DISPLAY`.
-- Conversão com `TEST-NUMVAL` e `NUMVAL`.
-- Cálculos com `COMPUTE`.
+- Verificação de conversibilidade com `TEST-NUMVAL`.
+- Conversão com `NUMVAL` e cálculos com `COMPUTE`.
 - Condições com `IF`, `ELSE`, `AND` e `OR`.
 - Seleção com `EVALUATE TRUE`.
 - Repetição com `PERFORM UNTIL` e `PERFORM VARYING`.
+- Interrupção de um laço com `EXIT PERFORM`.
 - Parágrafos executados com `PERFORM`.
 - Atribuição com `MOVE` e incremento com `ADD`.
-- Referência a posições de texto e uso de `FUNCTION TRIM`.
+- Referência a posições de texto.
+- Remoção de espaços com `TRIM` e comprimento com `LENGTH`.
+- Validação explícita do formato de entrada.
 - Refatoração para compartilhar regras.
 - Reinicialização de resultados entre chamadas.
 - Testes manuais e regressão.
@@ -229,9 +254,9 @@ reexecutados após cada alteração.
 
 ## Próximas etapas do COBOL
 
-- Tornar o formato monetário mais rigoroso.
 - Melhorar a apresentação dos valores.
 - Ler arquivos de esperados e recebidos.
+- Tratar limites de entrada e fim de arquivo.
 - Conciliar pagamentos por identificador.
 - Identificar diferenças e ausências.
 - Gerar relatório com resultados e totais.
