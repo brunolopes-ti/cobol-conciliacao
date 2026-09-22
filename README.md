@@ -1,34 +1,41 @@
 # Conciliação de pagamentos em COBOL
 
-Projeto de aprendizado e portfólio para construir uma aplicação
-de conciliação de pagamentos, começando pelo processamento em COBOL.
+Projeto de estudo para desenvolver uma aplicação de conciliação
+de pagamentos, com implementação incremental e testes documentados.
 
-O objetivo é comparar pagamentos esperados e recebidos,
-identificando correspondências, diferenças e ausências.
+O objetivo é comparar valores esperados e recebidos, identificar
+correspondências e apresentar divergências.
+
+O projeto utiliza GnuCOBOL no Ubuntu. Não utiliza ambiente mainframe.
 
 ## Estado atual
 
-Programa de terminal que confere um pagamento por execução.
+Existem dois programas independentes:
 
-Funcionalidades implementadas:
+| Programa | Responsabilidade |
+|---|---|
+| `ola.cob` | Conferência interativa de um pagamento |
+| `leitor.cob` | Leitura e validação de registros de um arquivo |
 
-- Recebe o nome ou login do operador.
-- Solicita os valores esperado e recebido pelo teclado.
-- Valida o formato e o limite dos valores antes da conversão.
-- Permite corrigir entradas inválidas sem reiniciar.
-- Preserva os campos já aceitos.
+A comparação entre arquivos de pagamentos esperados e recebidos
+ainda não foi implementada.
+
+## Conferência interativa
+
+O programa `ola.cob`:
+
+- Solicita o nome ou login do operador.
+- Rejeita identificação vazia.
+- Solicita os valores esperado e recebido.
+- Valida as entradas monetárias.
+- Permite nova tentativa após uma entrada inválida.
 - Calcula a diferença entre recebido e esperado.
-- Classifica o pagamento como igual, abaixo ou acima do esperado.
-- Apresenta valores com duas casas decimais, sem zeros
-  não significativos à esquerda.
-- Exibe o sinal da diferença.
+- Classifica o pagamento como conferido, abaixo ou acima do esperado.
+- Exibe valores com duas casas decimais e sem zeros desnecessários à esquerda.
 
-A identificação do operador é informativa: ainda não há autenticação.
+A identificação do operador é informativa: não existe autenticação.
 
-O programa utiliza GnuCOBOL no Ubuntu. Não foi executado
-em ambiente mainframe.
-
-## Regra de cálculo
+### Regra de cálculo
 
 ```text
 Diferença = valor recebido - valor esperado
@@ -36,302 +43,275 @@ Diferença = valor recebido - valor esperado
 
 | Diferença | Classificação |
 |---|---|
-| Positiva | Recebido acima do esperado |
+| Positiva | Recebimento acima do esperado |
 | Zero | Pagamento conferido |
-| Negativa | Recebido abaixo do esperado |
+| Negativa | Recebimento abaixo do esperado |
 
-## Regras de entrada
+## Leitura de arquivo
 
-### Operador
+O programa `leitor.cob` lê:
 
-Aceita nome ou login preenchido, como `Bruno` ou `bruno.lopes`.
+```text
+dados/esperados.csv
+```
 
-Uma entrada vazia ou composta apenas por espaços gera uma mensagem
-e uma nova solicitação.
+Cada linha deve conter um identificador e um valor esperado,
+separados por ponto e vírgula.
 
-### Valores monetários
+O arquivo não possui cabeçalho.
 
-- Faixa permitida: 0 até 99999.99, inclusive.
-- Pelo menos um dígito antes do ponto.
-- Ponto decimal opcional.
-- Quando houver ponto, deve haver um ou dois dígitos depois dele.
-- Zeros à esquerda são aceitos.
-- Espaços nas extremidades são removidos.
-- Espaços internos, vírgulas, sinais, letras e outros símbolos
-  são rejeitados.
-- Entradas inválidas permitem nova tentativa do mesmo campo.
+Exemplo:
 
-| Formato aceito | Exemplos |
-|---|---|
-| Inteiro | `0`, `100` |
-| Uma casa decimal | `100.5` |
-| Duas casas decimais | `0.50`, `100.50` |
-| Zeros à esquerda | `00100.50` |
-| Espaços nas extremidades | ` 100.50 ` |
+```text
+P001;100.50
+P002;200.00
+P003;75.25
+```
 
-Exemplos rejeitados: `100,50`, `+100`, `-100`, `1 00.50`,
-`.50`, `100.`, `90.8.0` e `100.509`.
+### Validação da estrutura
 
-A validação examina o texto armazenado no campo.
-Entradas acima da capacidade desse campo ainda precisam
-de tratamento específico.
+Cada registro precisa apresentar:
 
-## Organização do código
+- Exatamente um ponto e vírgula.
+- Identificador preenchido.
+- Valor preenchido.
 
-O fluxo principal recebe os dados, solicita correções,
-armazena os valores aceitos, calcula e apresenta o resultado.
+O leitor informa o número da linha com erro, continua processando
+os registros seguintes e apresenta os totais de registros lidos,
+válidos e inválidos.
 
-As regras monetárias são compartilhadas entre esperado e recebido.
+Uma linha é contabilizada como válida somente depois de passar
+pela validação da estrutura e pela validação monetária.
 
-| Parágrafo | Responsabilidade |
-|---|---|
-| `validar-formato` | Examinar os caracteres e contar dígitos inteiros e decimais |
-| `validar-valor` | Verificar formato, casas decimais, conversibilidade e limite; converter o valor aceito |
+Os identificadores ainda não possuem verificação de duplicidade
+nem uma regra específica de formato.
 
-O parágrafo `validar-valor` chama `validar-formato`.
+### Validação monetária
 
-A leitura dos campos utiliza `PERFORM UNTIL`.
-A escolha entre condições utiliza `EVALUATE TRUE`.
+Os dois programas aplicam as seguintes regras:
 
-### Dados compartilhados pela validação
+- Fa|---|
+| `100` | Aceita |
+| `100.5` | Aceita |
+| `100.50` | Aceita |
+| `00100.50` | Aceita |
+| `abc` | Rejeitada |
+| `+100.50` | Rejeitada |
+| `-1` | Rejeitada |
+| `100,50` | Rejeitada |
+| `.50` | Rejeitada |
+| `100.` | Rejeitada |
+| `100.509` | Rejeitada |
+| `100000` | Rejeitada |
 
-| Variável | Finalidade |
-|---|---|
-| `entrada-validacao` | Texto a validar, normalizado pela remoção de espaços nas extremidades |
-| `formato-ok` | Indica se a estrutura do texto é aceita |
-| `tamanho-entrada` | Comprimento do texto sem espaços nas extremidades |
-| `digitos-inteiros` | Quantidade de dígitos antes do ponto |
-| `casas-decimais` | Quantidade de dígitos após o ponto |
-| `encontrou-ponto` | Indica se o ponto já foi encontrado |
-| `validacao-ok` | Resultado final: 0 para inválido, 1 para válido |
-| `valor-validado` | Número convertido quando a validação passa |
-| `mensagem-erro` | Motivo da rejeição |
+Atualmente, as rotinas de validação estão presentes em cada
+programa. Ainda não existe um módulo compartilhado entre os
+dois executáveis.
 
-Essas variáveis pertencem ao programa e são compartilhadas pelos
-parágrafos. Não constituem parâmetros formais de uma função.
+## Ambiente utilizado
 
-Os resultados e contadores são reinicializados em cada validação.
-
-## Apresentação dos valores
-
-Os campos usados nos cálculos são separados dos campos de exibição.
-
-| Campo de exibição | Máscara |
-|---|---|
-| `esperado-exibicao` | `PIC ZZZZ9.99` |
-| `recebido-exibicao` | `PIC ZZZZ9.99` |
-| `diferenca-exibicao` | `PIC +++++9.99` |
-
-Após o cálculo, `MOVE` transfere os números para os campos
-de edição numérica, aplicando as máscaras.
-
-`FUNCTION TRIM` remove os espaços nas extremidades antes da exibição.
-
-Exemplos de apresentação:
-
-- Valor esperado: `100.50`.
-- Valor recebido: `90.80`.
-- Diferença negativa: `-9.70`.
-- Diferença zero: `+0.00`.
-- Diferença positiva máxima: `+99999.99`.
-
-O ponto continua sendo o separador decimal.
-A classificação utiliza o campo numérico `diferenca`,
-não o campo formatado.
-
-## Ambiente
-
-- Ubuntu 24.04 LTS em VirtualBox.
-- GnuCOBOL 3.1.2.0.
-- Git 2.43.0.
-- Editor GNU Nano.
+- Ubuntu 24.04 LTS em máquina virtual no VirtualBox.
+- GnuCOBOL 3.1.2.
+- Git e GitHub.
+- Editor Nano.
 - Acesso ao Ubuntu por SSH a partir do Windows.
 
 ## Arquivos
 
 | Arquivo | Finalidade |
 |---|---|
-| `ola.cob` | Código-fonte |
-| `.gitignore` | Regras para ignorar arquivos gerados |
-| `README.md` | Documentação |
+| `ola.cob` | Código da conferência interativa |
+| `leitor.cob` | Código da leitura e validação do arquivo |
+| `dados/esperados.csv` | Dados fictícios de exemplo |
+| `.gitignore` | Regras para ignorar os executáveis |
+| `README.md` | Documentação do projeto |
 
-O executável `ola` é gerado pela compilação e não é versionado.
+Os executáveis `ola` e `leitor` são gerados localmente e
+não são versionados.
 
-## Compilar e executar
+## Como compilar e executar
 
-Na pasta do projeto:
+Execute os comandos a partir da pasta raiz do projeto.
+
+### Conferência interativa
+
+Compile:
 
 ```bash
 cobc -x -free -o ola ola.cob
 ```
 
-| Parte | Significado |
-|---|---|
-| `cobc` | Compilador |
-| `-x` | Gera executável |
-| `-free` | Utiliza formato livre |
-| `-o ola` | Define o nome da saída |
-| `ola.cob` | Arquivo-fonte |
-
-Após alterar o código, compile novamente para atualizar o executável.
-
-Para executar:
+Execute:
 
 ```bash
 ./ola
 ```
 
-`./` indica a pasta atual.
+### Leitor de arquivo
 
-Exemplo de interação:
+Compile:
 
-```text
-Sistema de conciliacao iniciado.
-Digite o nome ou login do operador:
-bruno.lopes
-Operador: bruno.lopes
-Digite o valor esperado (exemplo: 100.50):
-100,50
-Erro no valor esperado: use digitos e ponto decimal, como 100.50.
-Digite o valor esperado (exemplo: 100.50):
-100.50
-Digite o valor recebido (exemplo: 80.25):
-90.80
-Valor esperado: 100.50
-Valor recebido: 90.80
-Diferenca: -9.70
-Status: valor recebido abaixo do esperado.
+```bash
+cobc -x -free -o leitor leitor.cob
 ```
 
-Para testar outros dados, basta executar novamente, sem recompilar.
+Execute:
 
-## Testes manuais
+```bash
+./leitor
+```
 
-Os testes utilizam dados fictícios.
+O caminho `dados/esperados.csv` é relativo à pasta de onde
+o programa é executado.
 
-### Cenários verificados em etapas anteriores
+Após alterar e salvar um arquivo `.cob`, compile novamente
+para atualizar seu executável.
 
-- Classificação de valores iguais, abaixo e acima do esperado.
-- Limites monetários, incluindo 0 e 99999.99.
-- Rejeição de letras, valores negativos e valores acima do limite.
-- Rejeição de casas decimais extras.
-- Operador obrigatório.
-- Correção de entradas sem reiniciar.
-- Preservação dos campos já aceitos.
-- Reinicialização dos resultados entre chamadas de validação.
-- Remoção de um bloco antigo que solicitava o recebido novamente.
+Alterar apenas o CSV não exige recompilação.
 
-### Validação do formato
+### Opções de compilação
 
-Primeira execução:
-
-| Campo | Sequência de tentativas |
+| Opção | Significado |
 |---|---|
-| Operador | bruno.lopes |
-| Esperado | 100,50 → 1 00.50 → .50 → 100.50 |
-| Recebido | 100. → 90.8.0 → 90.809 → 90.80 |
+| `-x` | Gera um executável |
+| `-free` | Usa formato livre de código COBOL |
+| `-o` | Define o nome do arquivo de saída |
 
-Somente a última tentativa de cada valor foi aceita.
-Resultado numérico: diferença -9.70, abaixo do esperado.
+## Resultado do arquivo de exemplo
 
-Segunda execução:
+```text
+Leitura dos pagamentos esperados.
+Pagamento: P001 | Valor esperado: 100.50
+Pagamento: P002 | Valor esperado: 200.00
+Pagamento: P003 | Valor esperado: 75.25
+Total de registros lidos: 3
+Registros validos: 3
+Registros invalidos: 0
+```
 
-| Campo | Entrada | Resultado |
-|---|---|---|
-| Esperado | ` 00100.50 ` | Aceito como 100.50 |
-| Recebido | `+100.50` | Rejeitado, permitindo correção |
-| Recebido | `100.5` | Aceito como 100.50 |
+## Tratamento de erros
 
-Resultado: diferença zero, pagamento conferido.
+O leitor verifica o resultado das operações de abertura,
+leitura e fechamento por meio de `FILE STATUS`.
 
-### Apresentação dos valores — etapa atual
+- `00`: operação realizada com sucesso.
+- `10`: fim do arquivo durante a leitura.
+- `35`: arquivo não encontrado na abertura.
 
-| Esperado | Recebido | Diferença exibida | Classificação |
-|---|---|---|---|
-| 100.50 | 90.80 | -9.70 | Abaixo do esperado |
-| 100.50 | 100.50 | +0.00 | Pagamento conferido |
-| 0 | 99999.99 | +99999.99 | Acima do esperado |
+Outros códigos são apresentados como erro de operação.
 
-Foram verificados a diferença negativa, o zero e a capacidade
-da máscara para apresentar o maior valor positivo permitido.
+O fim do arquivo é tratado como encerramento normal da leitura.
 
-Os testes são manuais. Não há cobertura exaustiva nem suíte
-automatizada. Os cenários anteriores não foram todos
-reexecutados após cada alteração.
+### Código de saída
 
-## Limitações
+| Código | Significado |
+|---|---|
+| `0` | Processamento concluído sem registros inválidos |
+| `1` | Falha de arquivo ou presença de registros inválidos |
 
-- Apenas um pagamento por execução.
-- Sem tratamento específico para entradas acima da capacidade
-  dos campos `PIC X(40)`.
-- Sem tratamento específico para fim da entrada padrão.
-- Sem leitura de arquivos de pagamentos ou relatório.
-- Sem banco, API, interface web ou autenticação.
-- Sem integração com sistemas bancários.
+Para consultar o código de saída no terminal, execute
+imediatamente depois do programa:
 
-## Conceitos praticados
+```bash
+echo $?
+```
 
-- Estrutura de um programa COBOL.
-- Campos com `PIC` e inicialização com `VALUE`.
-- Entrada e saída com `ACCEPT` e `DISPLAY`.
-- Verificação de conversibilidade com `TEST-NUMVAL`.
-- Conversão com `NUMVAL` e cálculos com `COMPUTE`.
-- Condições com `IF`, `ELSE`, `AND` e `OR`.
-- Seleção com `EVALUATE TRUE`.
-- Repetição com `PERFORM UNTIL` e `PERFORM VARYING`.
-- Interrupção de um laço com `EXIT PERFORM`.
-- Parágrafos executados com `PERFORM`.
-- Atribuição com `MOVE` e incremento com `ADD`.
-- Referência a posições de texto.
-- Remoção de espaços com `TRIM` e comprimento com `LENGTH`.
-- Validação explícita do formato de entrada.
-- Refatoração para compartilhar regras.
-- Reinicialização de resultados entre chamadas.
-- Campos de edição numérica e apresentação de sinais.
-- Separação entre cálculo e apresentação.
-- Testes manuais e regressão.
-- Compilação, execução, Git e GitHub.
+## Testes manuais realizados
 
-## Próximas etapas do COBOL
+### Conferência interativa
 
-- Ler arquivos de esperados e recebidos.
-- Tratar limites de entrada e fim de arquivo.
-- Conciliar pagamentos por identificador.
-- Identificar diferenças e ausências.
+Foram testados:
+
+- Recebimento abaixo, igual e acima do esperado.
+- Diferença calculada como recebido menos esperado.
+- Identificação vazia e login com ponto.
+- Entradas monetárias inválidas seguidas de entradas válidas.
+- Limites monetários e casas decimais.
+- Apresentação dos valores sem zeros à esquerda.
+
+### Leitura de arquivo
+
+Foram testados:
+
+- Leitura e separação de três registros.
+- Arquivo ausente, com `FILE STATUS 35` e saída `1`.
+- Ausência de separador.
+- Separador extra.
+- Identificador vazio.
+- Valor vazio.
+- Continuação da leitura após registros inválidos.
+
+### Teste combinado de estrutura e valor
+
+Arquivo utilizado temporariamente:
+
+```text
+P001;100.50
+P002;abc
+P003;100.509
+P004;100000
+P005; 00100.5
+P006;0
+P007;99999.99
+P008;50.00;extra
+```
+
+Resultado confirmado:
+
+| Linha | Resultado |
+|---|---|
+| 1 | Válida: `100.50` |
+| 2 | Erro de formato monetário |
+| 3 | Erro por excesso de casas decimais |
+| 4 | Erro por valor acima do limite |
+| 5 | Válida, apresentada como `100.50` |
+| 6 | Válida: `0.00` |
+| 7 | Válida: `99999.99` |
+| 8 | Erro por separador extra |
+
+Totais confirmados: oito registros lidos, quatro válidos,
+quatro inválidos e código de saída `1`.
+
+Os testes foram executados manualmente. Ainda não existe
+uma suíte automatizada.
+
+## Limitações atuais
+
+- A conferência interativa processa um pagamento por execução.
+- O leitor valida somente o arquivo de valores esperados.
+- Não existe comparação entre dois arquivos.
+- Não existe detecção de identificadores duplicados.
+- O leitor não grava relatório de saída.
+- Linhas maiores que o campo de 256 posições não possuem
+  tratamento explícito de excesso de tamanho.
+- Entradas acima da capacidade dos campos e fim da entrada
+  padrão ainda precisam de tratamento no programa interativo.
+- Um arquivo vazio ainda não é rejeitado.
+- Não há autenticação, banco de dados, API ou interface web.
+
+## Próximas etapas
+
+- Automatizar testes reproduzíveis.
+- Tratar limites de entrada e demais casos pendentes.
+- Ler pagamentos recebidos.
+- Comparar pagamentos por identificador.
+- Identificar divergências, ausências e recebimentos inesperados.
 - Gerar relatório com resultados e totais.
-- Automatizar os testes principais.
 
 ## Evolução planejada
 
-Todos os componentes abaixo fazem parte do escopo obrigatório,
-em um único repositório. Apenas a etapa inicial em COBOL foi
-implementada até agora.
+O projeto será ampliado para uma aplicação de conciliação com:
 
-| Componente | Tecnologia |
-|---|---|
-| Motor de conciliação | COBOL |
-| Banco de dados | PostgreSQL |
-| Primeiro backend | Java |
-| Backend alternativo | C# com .NET |
-| Primeira interface | Angular |
-| Interface alternativa | Vue |
-| Interface alternativa | React |
+- Processamento em COBOL.
+- Backends em Java e C#/.NET.
+- PostgreSQL.
+- Frontends em Angular, Vue e React.
 
-Primeiro será concluída uma combinação funcional de ponta a ponta.
-Depois serão implementadas as alternativas.
+Todas essas alternativas fazem parte do escopo de estudo,
+mas ainda não estão implementadas.
 
-Os backends deverão seguir o mesmo contrato de API.
-As três interfaces deverão ser compatíveis com ambos.
+## Natureza do projeto
 
-Funcionalidades web planejadas:
-
-- Autenticação e separação dos dados por usuário.
-- Envio de arquivos para conciliação.
-- Histórico de execuções, detalhes e totais.
-- Download de relatórios.
-
-## Autor
-
-Bruno Ramos Lopes
-
-Projeto de aprendizado e portfólio em desenvolvimento.
+Projeto educacional com dados fictícios, desenvolvido para
+aprendizado e portfólio. Não representa experiência profissional
+em sistemas bancários nem execução em mainframe.
