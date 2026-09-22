@@ -21,6 +21,9 @@ working-storage section.
 01 tamanho-entrada pic 99 value zero.
 01 digitos-inteiros pic 99 value zero.
 01 formato-ok pic 9 value zero.
+01 esperado-exibicao pic zzzz9.99.
+01 recebido-exibicao pic zzzz9.99.
+01 diferenca-exibicao pic +++++9.99.
 
 procedure division.
     display "Sistema de conciliacao iniciado."
@@ -75,10 +78,17 @@ procedure division.
     end-perform
 
     compute diferenca = valor-recebido - valor-esperado
+	
+	 move valor-esperado to esperado-exibicao
+	 move valor-recebido to recebido-exibicao
+	 move diferenca to diferenca-exibicao
 
-    display "Valor esperado: " valor-esperado
-    display "Valor recebido: " valor-recebido
-    display "Diferenca: " diferenca
+    display "Valor esperado: "
+        function trim(esperado-exibicao)
+    display "Valor recebido: "
+        function trim(recebido-exibicao)
+    display "Diferenca: "
+        function trim(diferenca-exibicao)    
 
     if diferenca = zero
         display "Status: pagamento conferido."
