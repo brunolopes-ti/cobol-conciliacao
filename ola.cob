@@ -32,7 +32,14 @@ procedure division.
 
     perform until nome-operador not = spaces
         display "Digite o nome ou login do operador:"
+
         accept nome-operador
+            on exception
+                display
+                    "Erro: entrada encerrada antes de informar o operador."
+                move 1 to return-code
+                stop run
+        end-accept
 
         if nome-operador = spaces
             display "Erro: informe o nome do operador."
@@ -45,7 +52,14 @@ procedure division.
 
     perform until esperado-valido = 1
         display "Digite o valor esperado (exemplo: 100.50):"
+
         accept entrada-esperado
+            on exception
+                display
+                    "Erro: entrada encerrada antes do valor esperado."
+                move 1 to return-code
+                stop run
+        end-accept
 
         move entrada-esperado to entrada-validacao
         perform validar-valor
@@ -63,7 +77,14 @@ procedure division.
 
     perform until recebido-valido = 1
         display "Digite o valor recebido (exemplo: 80.25):"
+
         accept entrada-recebido
+            on exception
+                display
+                    "Erro: entrada encerrada antes do valor recebido."
+                move 1 to return-code
+                stop run
+        end-accept
 
         move entrada-recebido to entrada-validacao
         perform validar-valor
@@ -78,17 +99,17 @@ procedure division.
     end-perform
 
     compute diferenca = valor-recebido - valor-esperado
-	
-	 move valor-esperado to esperado-exibicao
-	 move valor-recebido to recebido-exibicao
-	 move diferenca to diferenca-exibicao
+
+    move valor-esperado to esperado-exibicao
+    move valor-recebido to recebido-exibicao
+    move diferenca to diferenca-exibicao
 
     display "Valor esperado: "
         function trim(esperado-exibicao)
     display "Valor recebido: "
         function trim(recebido-exibicao)
     display "Diferenca: "
-        function trim(diferenca-exibicao)    
+        function trim(diferenca-exibicao)
 
     if diferenca = zero
         display "Status: pagamento conferido."
@@ -100,6 +121,7 @@ procedure division.
         end-if
     end-if
 
+    move zero to return-code
     stop run.
 
 validar-formato.

@@ -84,7 +84,34 @@ FIM
 
 verificar_cenario "arquivo misto" 1
 
-# Cenario 3: arquivo ausente
+# Cenario 3: arquivo vazio
+
+cp "$raiz_projeto/testes/cenarios/vazio.csv" \
+   "$pasta_teste/dados/esperados.csv"
+
+cat > "$pasta_teste/esperado.txt" <<'FIM'
+Leitura dos pagamentos esperados.
+Erro: arquivo de pagamentos esperados esta vazio.
+FIM
+
+verificar_cenario "arquivo vazio" 1
+
+# Cenario 4: linha longa
+
+cp "$raiz_projeto/testes/cenarios/linha-longa.csv" \
+   "$pasta_teste/dados/esperados.csv"
+
+cat > "$pasta_teste/esperado.txt" <<'FIM'
+Leitura dos pagamentos esperados.
+Erro na linha 1: linha excede o limite de 256 caracteres.
+Total de registros lidos: 1
+Registros validos: 0
+Registros invalidos: 1
+FIM
+
+verificar_cenario "linha longa" 1
+
+# Cenario 5: arquivo ausente
 
 rm -- "$pasta_teste/dados/esperados.csv"
 

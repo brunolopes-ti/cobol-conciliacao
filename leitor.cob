@@ -12,7 +12,7 @@ file-control.
 data division.
 file section.
 fd arquivo-esperados.
-01 registro-esperado pic x(256).
+01 registro-esperado pic x(1024).
 
 working-storage section.
 01 status-arquivo pic xx value spaces.
@@ -25,6 +25,7 @@ working-storage section.
 01 identificador-pagamento pic x(256) value spaces.
 01 valor-texto pic x(256) value spaces.
 01 quantidade-separadores pic 9(3) value zero.
+01 tamanho-registro pic 9(4) value zero.
 01 mensagem-erro pic x(80) value spaces.
 
 01 entrada-validacao pic x(256) value spaces.
@@ -94,6 +95,12 @@ procedure division.
         stop run
     end-if
 
+    if total-registros = zero
+        display "Erro: arquivo de pagamentos esperados esta vazio."
+        move 1 to return-code
+        stop run
+    end-if
+
     move total-registros to numero-exibicao
     display "Total de registros lidos: "
         function trim(numero-exibicao)
@@ -117,29 +124,41 @@ procedure division.
 validar-registro.
     move spaces to identificador-pagamento
         valor-texto mensagem-erro
+
     move zero to quantidade-separadores
+        tamanho-registro
 
-    inspect registro-esperado
-        tallying quantidade-separadores for all ";"
+    compute tamanho-registro =
+        function length(
+            function trim(registro-esperado trailing)
+        )
 
-    if quantidade-separadores not = 1
-        move "informe exatamente um ponto e virgula."
+    if tamanho-registro > 256
+        move "linha excede o limite de 256 caracteres."
             to mensagem-erro
     else
-        unstring registro-esperado
-            delimited by ";"
-            into identificador-pagamento valor-texto
-        end-unstring
+        inspect registro-esperado
+            tallying quantidade-separadores for all ";"
 
-        evaluate true
-            when function trim(identificador-pagamento) = spaces
-                move "identificador vazio."
-                    to mensagem-erro
+        if quantidade-separadores not = 1
+            move "informe exatamente um ponto e virgula."
+                to mensagem-erro
+        else
+            unstring registro-esperado
+                delimited by ";"
+                into identificador-pagamento valor-texto
+            end-unstring
 
-            when function trim(valor-texto) = spaces
-                move "valor vazio."
-                    to mensagem-erro
-        end-evaluate
+            evaluate true
+                when function trim(identificador-pagamento) = spaces
+                    move "identificador vazio."
+                        to mensagem-erro
+
+                when function trim(valor-texto) = spaces
+                    move "valor vazio."
+                        to mensagem-erro
+            end-evaluate
+        end-if
     end-if.
 
 validar-formato.
