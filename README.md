@@ -18,6 +18,8 @@ Existem dois programas independentes:
 | `ola.cob` | Conferência interativa de um pagamento |
 | `leitor.cob` | Leitura e validação de registros de um arquivo |
 
+O leitor possui uma suíte inicial de testes automatizados em Bash.
+
 A comparação entre arquivos de pagamentos esperados e recebidos
 ainda não foi implementada.
 
@@ -153,6 +155,7 @@ evitando que resultados anteriores interfiram no registro seguinte.
 
 - Ubuntu 24.04 LTS em máquina virtual no VirtualBox.
 - GnuCOBOL 3.1.2.
+- Bash e utilitários de terminal, incluindo `diff` e `mktemp`.
 - Git e GitHub.
 - Editor Nano.
 - Acesso ao Ubuntu por SSH a partir do Windows.
@@ -164,6 +167,9 @@ evitando que resultados anteriores interfiram no registro seguinte.
 | `ola.cob` | Código da conferência interativa |
 | `leitor.cob` | Código da leitura e validação do arquivo |
 | `dados/esperados.csv` | Dados fictícios de exemplo |
+| `testes/cenarios/validos.csv` | Entrada do cenário válido |
+| `testes/cenarios/mistos.csv` | Entrada com registros válidos e inválidos |
+| `testes/testar-leitor.sh` | Script dos testes automatizados |
 | `.gitignore` | Regras para ignorar os executáveis |
 | `README.md` | Documentação do projeto |
 
@@ -259,6 +265,66 @@ imediatamente depois do programa:
 echo $?
 ```
 
+## Testes automatizados
+
+Na pasta raiz do projeto, execute:
+
+```bash
+bash testes/testar-leitor.sh
+```
+
+Não é necessário compilar o leitor manualmente antes desse comando:
+o próprio script compila o código-fonte.
+
+### Funcionamento
+
+O script:
+
+1. Localiza a pasta do projeto.
+2. Cria uma pasta temporária.
+3. Compila o leitor dentro dessa pasta.
+4. Prepara a entrada de cada cenário.
+5. Executa o programa e captura sua saída e código de encerramento.
+6. Compara a saída completa com o texto esperado usando `diff`.
+7. Apresenta o resultado de cada cenário e o resumo.
+8. Remove a pasta temporária ao encerrar normalmente o script.
+
+O arquivo original `dados/esperados.csv` não é alterado pelos testes.
+
+### Cenários implementados
+
+| Cenário | Verificação | Código esperado do leitor |
+|---|---|---|
+| Arquivo válido | Três registros aceitos e saída completa correta | `0` |
+| Arquivo misto | Quatro válidos, quatro inválidos e mensagens corretas | `1` |
+| Arquivo ausente | Mensagem de abertura com `FILE STATUS 35` | `1` |
+
+Um cenário de erro passa quando o leitor apresenta o erro esperado.
+
+### Resultado confirmado
+
+```text
+Compilando o leitor...
+PASSOU: arquivo valido
+PASSOU: arquivo misto
+PASSOU: arquivo ausente
+
+Resumo: 3 aprovados, 0 reprovados.
+```
+
+O script terminou com código `0` nessa execução.
+
+### Código de saída da suíte
+
+- `0`: todos os cenários passaram.
+- `1`: pelo menos uma verificação de cenário falhou.
+- Falhas de preparação ou compilação também interrompem o script
+  com código diferente de zero.
+
+A suíte inicial não cobre todas as regras, limites ou falhas de arquivo.
+Os testes de `ola.cob` ainda são manuais.
+A execução no GitHub Actions ainda não foi configurada.
+
 ## Testes manuais realizados
 
 ### Conferência interativa
@@ -286,7 +352,8 @@ Foram testados:
 
 ### Teste combinado de estrutura e valor
 
-Arquivo utilizado temporariamente:
+Dados usados manualmente e preservados em
+`testes/cenarios/mistos.csv` para a automação:
 
 ```text
 P001;100.50
@@ -315,12 +382,11 @@ Resultado confirmado:
 Totais confirmados: oito registros lidos, quatro válidos,
 quatro inválidos e código de saída `1`.
 
-Após restaurar o arquivo de exemplo, uma nova execução
+Após restaurar o arquivo de exemplo, uma nova execução manual
 apresentou três registros válidos, nenhum inválido e saída `0`.
 
-Os testes foram executados manualmente.
-Ainda não existe uma suíte automatizada nem cobertura exaustiva.
-Os cenários anteriores não foram todos repetidos após cada alteração.
+Os cenários manuais anteriores não foram todos repetidos
+após cada alteração.
 
 ## Limitações atuais
 
@@ -339,8 +405,9 @@ Os cenários anteriores não foram todos repetidos após cada alteração.
 
 ## Próximas etapas
 
-- Automatizar testes reproduzíveis.
-- Tratar limites de entrada e demais casos pendentes.
+- Tratar limites de entrada, arquivo vazio e demais casos pendentes.
+- Ampliar os testes automatizados conforme novas regras forem implementadas.
+- Organizar o código e compartilhar a validação monetária.
 - Ler pagamentos recebidos.
 - Comparar pagamentos por identificador.
 - Identificar divergências, ausências e recebimentos inesperados.
