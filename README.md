@@ -1,12 +1,13 @@
 # Conciliação de pagamentos em COBOL
 
-Projeto de estudo para desenvolver uma aplicação de conciliação
-de pagamentos, com implementação incremental e testes documentados.
+Projeto de aprendizado e portfólio para construir uma aplicação
+de conciliação de pagamentos, começando pelo processamento em COBOL.
 
-O objetivo é comparar valores esperados e recebidos, identificar
-correspondências e apresentar divergências.
+O objetivo é comparar pagamentos esperados e recebidos,
+identificar correspondências, diferenças e ausências.
 
-O projeto utiliza GnuCOBOL no Ubuntu. Não utiliza ambiente mainframe.
+O projeto utiliza GnuCOBOL no Ubuntu. Não foi executado
+em ambiente mainframe.
 
 ## Estado atual
 
@@ -25,13 +26,13 @@ ainda não foi implementada.
 O programa `ola.cob`:
 
 - Solicita o nome ou login do operador.
-- Rejeita identificação vazia.
+- Rejeita identificação vazia ou composta apenas por espaços.
 - Solicita os valores esperado e recebido.
 - Valida as entradas monetárias.
 - Permite nova tentativa após uma entrada inválida.
 - Calcula a diferença entre recebido e esperado.
 - Classifica o pagamento como conferido, abaixo ou acima do esperado.
-- Exibe valores com duas casas decimais e sem zeros desnecessários à esquerda.
+- Exibe valores com duas casas decimais, sem zeros desnecessários à esquerda.
 
 A identificação do operador é informativa: não existe autenticação.
 
@@ -90,23 +91,63 @@ nem uma regra específica de formato.
 
 Os dois programas aplicam as seguintes regras:
 
-- Fa|---|
+- Faixa permitida: de `0` a `99999.99`, inclusive.
+- Inteiros são aceitos.
+- Uma ou duas casas decimais são aceitas.
+- O separador decimal é o ponto.
+- Zeros à esquerda são aceitos.
+- Espaços nas extremidades são aceitos.
+- Sinais, vírgulas e espaços internos são rejeitados.
+- Letras e múltiplos pontos são rejeitados.
+- Quando existe ponto, deve haver dígitos antes e depois dele.
+- Mais de duas casas decimais são rejeitadas.
+
+Exemplos:
+
+| Entrada | Resultado |
+|---|---|
+| `0` | Aceita |
 | `100` | Aceita |
 | `100.5` | Aceita |
 | `100.50` | Aceita |
 | `00100.50` | Aceita |
+| ` 100.50 ` | Aceita |
+| `99999.99` | Aceita |
 | `abc` | Rejeitada |
 | `+100.50` | Rejeitada |
 | `-1` | Rejeitada |
 | `100,50` | Rejeitada |
+| `1 00.50` | Rejeitada |
 | `.50` | Rejeitada |
 | `100.` | Rejeitada |
+| `90.8.0` | Rejeitada |
 | `100.509` | Rejeitada |
 | `100000` | Rejeitada |
 
-Atualmente, as rotinas de validação estão presentes em cada
-programa. Ainda não existe um módulo compartilhado entre os
-dois executáveis.
+A validação examina o texto armazenado no campo.
+Entradas acima da capacidade dos campos ainda precisam
+de tratamento específico.
+
+Atualmente, as rotinas monetárias estão presentes em cada
+programa. Ainda não existe um módulo compartilhado entre
+os dois executáveis.
+
+## Organização do leitor
+
+| Parágrafo | Responsabilidade |
+|---|---|
+| `validar-registro` | Verificar separador e campos preenchidos |
+| `validar-formato` | Examinar caracteres e contar casas decimais |
+| `validar-valor` | Coordenar a validação monetária e converter o valor |
+| `mostrar-registro` | Apresentar identificador e valor formatado |
+
+O fluxo principal abre o arquivo, lê cada registro, solicita
+as validações, contabiliza os resultados e fecha o arquivo.
+
+A validação monetária só ocorre quando a estrutura está correta.
+
+Os campos de trabalho são reinicializados a cada validação,
+evitando que resultados anteriores interfiram no registro seguinte.
 
 ## Ambiente utilizado
 
@@ -167,7 +208,7 @@ o programa é executado.
 Após alterar e salvar um arquivo `.cob`, compile novamente
 para atualizar seu executável.
 
-Alterar apenas o CSV não exige recompilação.
+Alterar apenas o CSV ou o README não exige recompilação.
 
 ### Opções de compilação
 
@@ -189,14 +230,16 @@ Registros validos: 3
 Registros invalidos: 0
 ```
 
-## Tratamento de erros
+## Tratamento de erros do leitor
 
 O leitor verifica o resultado das operações de abertura,
 leitura e fechamento por meio de `FILE STATUS`.
 
-- `00`: operação realizada com sucesso.
-- `10`: fim do arquivo durante a leitura.
-- `35`: arquivo não encontrado na abertura.
+| Código | Significado |
+|---|---|
+| `00` | Operação realizada com sucesso |
+| `10` | Fim do arquivo durante a leitura |
+| `35` | Arquivo não encontrado na abertura |
 
 Outros códigos são apresentados como erro de operação.
 
@@ -220,7 +263,7 @@ echo $?
 
 ### Conferência interativa
 
-Foram testados:
+Foram testados ao longo do desenvolvimento:
 
 - Recebimento abaixo, igual e acima do esperado.
 - Diferença calculada como recebido menos esperado.
@@ -272,8 +315,12 @@ Resultado confirmado:
 Totais confirmados: oito registros lidos, quatro válidos,
 quatro inválidos e código de saída `1`.
 
-Os testes foram executados manualmente. Ainda não existe
-uma suíte automatizada.
+Após restaurar o arquivo de exemplo, uma nova execução
+apresentou três registros válidos, nenhum inválido e saída `0`.
+
+Os testes foram executados manualmente.
+Ainda não existe uma suíte automatizada nem cobertura exaustiva.
+Os cenários anteriores não foram todos repetidos após cada alteração.
 
 ## Limitações atuais
 
@@ -288,6 +335,7 @@ uma suíte automatizada.
   padrão ainda precisam de tratamento no programa interativo.
 - Um arquivo vazio ainda não é rejeitado.
 - Não há autenticação, banco de dados, API ou interface web.
+- Não há integração com sistemas bancários.
 
 ## Próximas etapas
 
@@ -300,17 +348,37 @@ uma suíte automatizada.
 
 ## Evolução planejada
 
-O projeto será ampliado para uma aplicação de conciliação com:
+Todos os componentes abaixo fazem parte do escopo de estudo,
+em um único repositório:
 
-- Processamento em COBOL.
-- Backends em Java e C#/.NET.
-- PostgreSQL.
-- Frontends em Angular, Vue e React.
+| Componente | Tecnologia |
+|---|---|
+| Motor de conciliação | COBOL |
+| Banco de dados | PostgreSQL |
+| Backend | Java |
+| Backend alternativo | C# com .NET |
+| Interface web | Angular |
+| Interface alternativa | Vue |
+| Interface alternativa | React |
 
-Todas essas alternativas fazem parte do escopo de estudo,
-mas ainda não estão implementadas.
+Até o momento, somente a etapa inicial em COBOL foi implementada.
 
-## Natureza do projeto
+Primeiro será concluída uma combinação funcional de ponta a ponta.
+Depois serão implementadas as alternativas.
+
+Os backends deverão seguir o mesmo contrato de API.
+As três interfaces deverão ser compatíveis com ambos.
+
+Funcionalidades web planejadas:
+
+- Autenticação e separação dos dados por usuário.
+- Envio de arquivos para conciliação.
+- Histórico de execuções, detalhes e totais.
+- Download de relatórios.
+
+## Autor
+
+Bruno Ramos Lopes.
 
 Projeto educacional com dados fictícios, desenvolvido para
 aprendizado e portfólio. Não representa experiência profissional
