@@ -19,6 +19,9 @@ Funcionalidades implementadas:
 - Preserva os campos já aceitos.
 - Calcula a diferença entre recebido e esperado.
 - Classifica o pagamento como igual, abaixo ou acima do esperado.
+- Apresenta valores com duas casas decimais, sem zeros
+  não significativos à esquerda.
+- Exibe o sinal da diferença.
 
 A identificação do operador é informativa: ainda não há autenticação.
 
@@ -58,7 +61,7 @@ e uma nova solicitação.
   são rejeitados.
 - Entradas inválidas permitem nova tentativa do mesmo campo.
 
-| Formato | Exemplos |
+| Formato aceito | Exemplos |
 |---|---|
 | Inteiro | `0`, `100` |
 | Uma casa decimal | `100.5` |
@@ -76,14 +79,14 @@ de tratamento específico.
 ## Organização do código
 
 O fluxo principal recebe os dados, solicita correções,
-armazena os valores aceitos e apresenta o resultado.
+armazena os valores aceitos, calcula e apresenta o resultado.
 
 As regras monetárias são compartilhadas entre esperado e recebido.
 
 | Parágrafo | Responsabilidade |
 |---|---|
 | `validar-formato` | Examinar os caracteres e contar dígitos inteiros e decimais |
-| `validar-valor` | Aplicar as verificações de formato, casas decimais, conversibilidade e limite; converter o valor aceito |
+| `validar-valor` | Verificar formato, casas decimais, conversibilidade e limite; converter o valor aceito |
 
 O parágrafo `validar-valor` chama `validar-formato`.
 
@@ -108,6 +111,33 @@ Essas variáveis pertencem ao programa e são compartilhadas pelos
 parágrafos. Não constituem parâmetros formais de uma função.
 
 Os resultados e contadores são reinicializados em cada validação.
+
+## Apresentação dos valores
+
+Os campos usados nos cálculos são separados dos campos de exibição.
+
+| Campo de exibição | Máscara |
+|---|---|
+| `esperado-exibicao` | `PIC ZZZZ9.99` |
+| `recebido-exibicao` | `PIC ZZZZ9.99` |
+| `diferenca-exibicao` | `PIC +++++9.99` |
+
+Após o cálculo, `MOVE` transfere os números para os campos
+de edição numérica, aplicando as máscaras.
+
+`FUNCTION TRIM` remove os espaços nas extremidades antes da exibição.
+
+Exemplos de apresentação:
+
+- Valor esperado: `100.50`.
+- Valor recebido: `90.80`.
+- Diferença negativa: `-9.70`.
+- Diferença zero: `+0.00`.
+- Diferença positiva máxima: `+99999.99`.
+
+O ponto continua sendo o separador decimal.
+A classificação utiliza o campo numérico `diferenca`,
+não o campo formatado.
 
 ## Ambiente
 
@@ -167,13 +197,12 @@ Digite o valor esperado (exemplo: 100.50):
 100.50
 Digite o valor recebido (exemplo: 80.25):
 90.80
-Valor esperado: 00100.50
-Valor recebido: 00090.80
-Diferenca: -00009.70
+Valor esperado: 100.50
+Valor recebido: 90.80
+Diferenca: -9.70
 Status: valor recebido abaixo do esperado.
 ```
 
-Os zeros à esquerda fazem parte da apresentação atual dos campos.
 Para testar outros dados, basta executar novamente, sem recompilar.
 
 ## Testes manuais
@@ -189,12 +218,10 @@ Os testes utilizam dados fictícios.
 - Operador obrigatório.
 - Correção de entradas sem reiniciar.
 - Preservação dos campos já aceitos.
-- Reutilização da validação sem carregar resultados de chamadas anteriores.
+- Reinicialização dos resultados entre chamadas de validação.
 - Remoção de um bloco antigo que solicitava o recebido novamente.
 
-Esses cenários não foram todos reexecutados após cada alteração.
-
-### Formato monetário — etapa atual
+### Validação do formato
 
 Primeira execução:
 
@@ -205,8 +232,7 @@ Primeira execução:
 | Recebido | 100. → 90.8.0 → 90.809 → 90.80 |
 
 Somente a última tentativa de cada valor foi aceita.
-
-Resultado: diferença -9.70, abaixo do esperado.
+Resultado numérico: diferença -9.70, abaixo do esperado.
 
 Segunda execução:
 
@@ -218,8 +244,20 @@ Segunda execução:
 
 Resultado: diferença zero, pagamento conferido.
 
+### Apresentação dos valores — etapa atual
+
+| Esperado | Recebido | Diferença exibida | Classificação |
+|---|---|---|---|
+| 100.50 | 90.80 | -9.70 | Abaixo do esperado |
+| 100.50 | 100.50 | +0.00 | Pagamento conferido |
+| 0 | 99999.99 | +99999.99 | Acima do esperado |
+
+Foram verificados a diferença negativa, o zero e a capacidade
+da máscara para apresentar o maior valor positivo permitido.
+
 Os testes são manuais. Não há cobertura exaustiva nem suíte
-automatizada.
+automatizada. Os cenários anteriores não foram todos
+reexecutados após cada alteração.
 
 ## Limitações
 
@@ -249,12 +287,13 @@ automatizada.
 - Validação explícita do formato de entrada.
 - Refatoração para compartilhar regras.
 - Reinicialização de resultados entre chamadas.
+- Campos de edição numérica e apresentação de sinais.
+- Separação entre cálculo e apresentação.
 - Testes manuais e regressão.
 - Compilação, execução, Git e GitHub.
 
 ## Próximas etapas do COBOL
 
-- Melhorar a apresentação dos valores.
 - Ler arquivos de esperados e recebidos.
 - Tratar limites de entrada e fim de arquivo.
 - Conciliar pagamentos por identificador.
