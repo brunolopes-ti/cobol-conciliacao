@@ -11,19 +11,16 @@ em ambiente mainframe.
 
 ## Estado atual
 
-Existem dois programas independentes:
-
-| Programa | Responsabilidade |
+| Componente | Responsabilidade |
 |---|---|
 | `ola.cob` | Conferência interativa de um pagamento |
 | `leitor.cob` | Leitura e validação de registros de um arquivo |
+| `validar-monetario.cob` | Validação monetária compartilhada |
 
-Os dois programas possuem testes automatizados em Bash.
+Os dois programas principais chamam o mesmo subprograma monetário.
 
-Atualmente existem oito cenários automatizados:
-
-- Cinco para o leitor de arquivo.
-- Três para o tratamento de fim da entrada interativa.
+Existem nove cenários automatizados:
+cinco para o leitor e quatro para a conferência interativa.
 
 A comparação entre arquivos de pagamentos esperados e recebidos
 ainda não foi implementada.
@@ -35,13 +32,12 @@ O programa `ola.cob`:
 - Solicita o nome ou login do operador.
 - Rejeita identificação vazia ou composta apenas por espaços.
 - Solicita os valores esperado e recebido.
-- Valida as entradas monetárias.
+- Valida as entradas monetárias pelo subprograma compartilhado.
 - Permite nova tentativa após uma entrada inválida.
-- Detecta o encerramento inesperado da entrada padrão.
-- Encerra com código de erro quando a entrada termina antes dos dados necessários.
+- Trata o encerramento da entrada antes dos campos obrigatórios.
 - Calcula a diferença entre recebido e esperado.
 - Classifica o pagamento como conferido, abaixo ou acima do esperado.
-- Exibe valores com duas casas decimais.
+- Exibe valores com duas casas decimais, sem zeros desnecessários à esquerda.
 
 A identificação do operador é informativa: não existe autenticação.
 
@@ -56,28 +52,6 @@ Diferença = valor recebido - valor esperado
 | Positiva | Recebimento acima do esperado |
 | Zero | Pagamento conferido |
 | Negativa | Recebimento abaixo do esperado |
-
-### Fim da entrada interativa
-
-O programa trata situações em que a entrada padrão termina antes
-da conclusão da conferência.
-
-São tratados os seguintes pontos:
-
-- Antes de informar o operador.
-- Antes de informar o valor esperado.
-- Antes de informar o valor recebido.
-
-Nessas situações, o programa apresenta uma mensagem específica
-e encerra com código `1`.
-
-Exemplo:
-
-```text
-Sistema de conciliacao iniciado.
-Digite o nome ou login do operador:
-Erro: entrada encerrada antes de informar o operador.
-```
 
 ## Leitura de arquivo
 
@@ -107,7 +81,9 @@ Cada registro precisa apresentar:
 - Exatamente um ponto e vírgula.
 - Identificador preenchido.
 - Valor preenchido.
-- No máximo 256 caracteres por linha.
+
+O leitor rejeita arquivo vazio e verifica o comprimento do registro
+antes de separar os campos.
 
 O leitor informa o número da linha com erro, continua processando
 os registros seguintes e apresenta os totais de registros lidos,
@@ -119,35 +95,20 @@ pela validação da estrutura e pela validação monetária.
 Os identificadores ainda não possuem verificação de duplicidade
 nem uma regra específica de formato.
 
-### Limite de tamanho das linhas
+### Limite das linhas
 
-O campo bruto utilizado para leitura possui capacidade maior que
-o limite aceito pela aplicação.
+O campo de leitura possui 1024 posições.
+A verificação atual rejeita registros cujo texto, após remover
+espaços finais, excede 256 posições.
 
-Isso permite receber uma linha maior e verificar explicitamente
-se ela ultrapassa o limite definido de 256 caracteres.
+Essa verificação ainda não mede integralmente o tamanho físico
+de qualquer linha: espaços finais são desconsiderados e linhas
+acima da capacidade do campo de leitura precisam de tratamento
+adicional.
 
-Uma linha maior que 256 caracteres é rejeitada com:
+## Validação monetária compartilhada
 
-```text
-Erro na linha 1: linha excede o limite de 256 caracteres.
-```
-
-### Arquivo vazio
-
-Um arquivo existente, porém sem registros, é considerado inválido.
-
-Nesse caso, o leitor apresenta:
-
-```text
-Erro: arquivo de pagamentos esperados esta vazio.
-```
-
-e encerra com código `1`.
-
-## Validação monetária
-
-Os dois programas aplicam as seguintes regras:
+As regras estão implementadas em `validar-monetario.cob`:
 
 - Faixa permitida: de `0` a `99999.99`, inclusive.
 - Inteiros são aceitos.
@@ -182,32 +143,56 @@ Exemplos:
 | `100.509` | Rejeitada |
 | `100000` | Rejeitada |
 
-Atualmente, as rotinas monetárias estão presentes nos dois programas.
+### Contrato do subprograma
 
-Ainda não existe um módulo compartilhado para essa validação.
-Essa organização será realizada na próxima etapa do projeto.
+Os campos são passados nesta ordem:
 
-## Organização do leitor
+| Campo | Definição COBOL | Finalidade |
+|---|---|---|
+| `entrada-validacao` | `PIC X(256)` | Texto de entrada |
+| `validacao-ok` | `PIC 9` | `1` para válido; `0` para inválido |
+| `valor-validado` | `PIC 9(5)V99` | Número convertido quando aprovado |
+| `mensagem-erro` | `PIC X(80)` | Motivo da rejeição |
 
-| Parágrafo | Responsabilidade |
+Os programas chamam o subprograma com `CALL ... USING`.
+
+O subprograma:
+
+- Recebe os campos por meio da `LINKAGE SECTION`.
+- Reinicializa os resultados a cada chamada.
+- Copia a entrada para um campo de trabalho.
+- Valida o formato antes da conversão.
+- Não altera o texto original recebido.
+- Não lê teclado, abre arquivos ou exibe mensagens.
+- Devolve a execução ao chamador com `GOBACK`.
+
+A validação examina o texto recebido no campo.
+Ela não recupera conteúdo que tenha sido truncado antes da chamada.
+
+## Organização do código
+
+| Componente | Responsabilidades |
 |---|---|
-| `validar-registro` | Verificar tamanho, separador e campos preenchidos |
-| `validar-formato` | Examinar caracteres e contar casas decimais |
-| `validar-valor` | Coordenar a validação monetária e converter o valor |
-| `mostrar-registro` | Apresentar identificador e valor formatado |
+| `ola.cob` | Interação, novas tentativas, cálculo e apresentação |
+| `leitor.cob` | Operações de arquivo, estrutura dos registros e contadores |
+| `validar-monetario.cob` | Formato, casas decimais, limite e conversão monetária |
 
-O fluxo principal abre o arquivo, lê cada registro, realiza
-as validações, contabiliza os resultados e fecha o arquivo.
+No leitor, a validação monetária só é chamada quando
+a estrutura do registro está correta.
 
-A validação monetária só ocorre quando a estrutura está correta.
+O código-fonte monetário é compartilhado.
+Na compilação, ele é ligado a cada executável.
+
+Ao alterar esse subprograma, é necessário recompilar
+os dois programas principais.
 
 ## Ambiente utilizado
 
 - Ubuntu 24.04 LTS em máquina virtual no VirtualBox.
 - GnuCOBOL 3.1.2.
-- Bash.
+- Bash e utilitários de terminal, incluindo `diff`, `grep` e `mktemp`.
 - Git e GitHub.
-- Nano.
+- Editor Nano.
 - Acesso ao Ubuntu por SSH a partir do Windows.
 
 ## Arquivos
@@ -216,32 +201,33 @@ A validação monetária só ocorre quando a estrutura está correta.
 |---|---|
 | `ola.cob` | Conferência interativa |
 | `leitor.cob` | Leitura e validação do arquivo |
+| `validar-monetario.cob` | Subprograma monetário compartilhado |
 | `dados/esperados.csv` | Dados fictícios de exemplo |
-| `testes/cenarios/validos.csv` | Cenário com registros válidos |
-| `testes/cenarios/mistos.csv` | Cenário com registros válidos e inválidos |
-| `testes/cenarios/vazio.csv` | Cenário de arquivo vazio |
-| `testes/cenarios/linha-longa.csv` | Cenário acima do limite de tamanho |
+| `testes/cenarios/validos.csv` | Cenário válido |
+| `testes/cenarios/mistos.csv` | Registros válidos e inválidos |
+| `testes/cenarios/vazio.csv` | Arquivo vazio |
+| `testes/cenarios/linha-longa.csv` | Registro acima do limite testado |
 | `testes/testar-leitor.sh` | Testes automatizados do leitor |
-| `testes/testar-ola.sh` | Testes automatizados da entrada interativa |
-| `.gitignore` | Arquivos ignorados pelo Git |
+| `testes/testar-ola.sh` | Testes automatizados da conferência interativa |
+| `.gitignore` | Regras para ignorar os executáveis |
 | `README.md` | Documentação do projeto |
 
-Os executáveis `ola` e `leitor` são gerados localmente
-e não são versionados.
+Os executáveis `ola` e `leitor` são gerados localmente e
+não são versionados.
 
 ## Como compilar e executar
 
-Execute os comandos a partir da raiz do projeto.
+Execute os comandos a partir da pasta raiz do projeto.
 
 ### Conferência interativa
 
-Compilar:
+Compile:
 
 ```bash
-cobc -x -free -o ola ola.cob
+cobc -x -free -o ola ola.cob validar-monetario.cob
 ```
 
-Executar:
+Execute:
 
 ```bash
 ./ola
@@ -249,28 +235,34 @@ Executar:
 
 ### Leitor de arquivo
 
-Compilar:
+Compile:
 
 ```bash
-cobc -x -free -o leitor leitor.cob
+cobc -x -free -o leitor leitor.cob validar-monetario.cob
 ```
 
-Executar:
+Execute:
 
 ```bash
 ./leitor
 ```
 
-O caminho `dados/esperados.csv` é relativo à pasta de onde
-o programa é executado.
+O programa principal é listado antes do subprograma na compilação.
 
-### Opções utilizadas
+O caminho `dados/esperados.csv` é relativo à pasta de onde
+o leitor é executado.
+
+Após alterar um arquivo `.cob`, recompile os executáveis afetados.
+
+Alterar apenas o CSV ou o README não exige recompilação.
+
+### Opções de compilação
 
 | Opção | Significado |
 |---|---|
 | `-x` | Gera um executável |
-| `-free` | Utiliza formato livre de código COBOL |
-| `-o` | Define o nome do executável |
+| `-free` | Usa formato livre de código COBOL |
+| `-o` | Define o nome do arquivo de saída |
 
 ## Resultado do arquivo de exemplo
 
@@ -284,31 +276,37 @@ Registros validos: 3
 Registros invalidos: 0
 ```
 
-## Tratamento de erros do leitor
+## Tratamento de erros
 
-O leitor verifica as operações de arquivo por meio de `FILE STATUS`.
+O leitor verifica abertura, leitura e fechamento por meio
+de `FILE STATUS`.
 
 | Código | Significado |
 |---|---|
 | `00` | Operação realizada com sucesso |
-| `10` | Fim do arquivo |
-| `35` | Arquivo não encontrado |
+| `10` | Fim do arquivo durante a leitura |
+| `35` | Arquivo não encontrado na abertura |
 
-Além das falhas de arquivo, o leitor também rejeita:
+Outros códigos são apresentados como erro de operação.
 
-- Arquivo vazio.
-- Linha maior que 256 caracteres.
-- Estrutura inválida.
-- Valor monetário inválido.
+O fim do arquivo encerra normalmente a leitura.
+Se nenhum registro tiver sido lido, o arquivo é rejeitado como vazio.
 
-### Código de saída
+No programa interativo, o encerramento da entrada antes de um
+campo obrigatório produz uma mensagem de erro e saída `1`.
+
+### Códigos de saída dos programas
 
 | Código | Significado |
 |---|---|
-| `0` | Processamento concluído sem registros inválidos |
-| `1` | Falha de entrada, falha de arquivo ou registro inválido |
+| `0` | Execução concluída com sucesso |
+| `1` | Erro de arquivo, registros inválidos ou entrada interativa encerrada prematuramente |
 
-Para consultar o código de saída:
+Um pagamento abaixo ou acima do esperado não é erro de execução:
+é um resultado da conferência e permite saída `0`.
+
+Para consultar o código de saída, execute imediatamente
+depois do programa:
 
 ```bash
 echo $?
@@ -316,123 +314,104 @@ echo $?
 
 ## Testes automatizados
 
-O projeto possui duas suítes de testes em Bash.
-
-### Testes do leitor
-
-Execute:
+Na pasta raiz do projeto, execute:
 
 ```bash
 bash testes/testar-leitor.sh
 ```
 
-O próprio script compila `leitor.cob`, prepara os cenários,
-executa o programa e verifica as saídas.
-
-O arquivo original `dados/esperados.csv` não é alterado.
-
-### Cenários do leitor
-
-| Cenário | Resultado esperado | Código |
-|---|---|---|
-| Arquivo válido | Três registros válidos | `0` |
-| Arquivo misto | Quatro válidos e quatro inválidos | `1` |
-| Arquivo vazio | Arquivo rejeitado | `1` |
-| Linha longa | Linha acima de 256 caracteres rejeitada | `1` |
-| Arquivo ausente | `FILE STATUS 35` | `1` |
-
-Resultado confirmado:
-
-```text
-Compilando o leitor...
-PASSOU: arquivo valido
-PASSOU: arquivo misto
-PASSOU: arquivo vazio
-PASSOU: linha longa
-PASSOU: arquivo ausente
-
-Resumo: 5 aprovados, 0 reprovados.
-```
-
-### Testes da conferência interativa
-
-Execute:
-
 ```bash
 bash testes/testar-ola.sh
 ```
 
-São verificados o código de saída e a mensagem esperada.
+Os scripts compilam o programa principal junto com
+`validar-monetario.cob` em uma pasta temporária.
 
-### Cenários interativos
+Não é necessário compilar manualmente antes dos testes.
 
-| Cenário | Resultado esperado | Código |
-|---|---|---|
-| Fim antes do operador | Entrada encerrada antes da identificação | `1` |
-| Fim antes do valor esperado | Entrada encerrada antes do valor esperado | `1` |
-| Fim antes do valor recebido | Entrada encerrada antes do valor recebido | `1` |
+### Testes do leitor
 
-Resultado confirmado:
+A suíte compara a saída completa usando `diff`
+e verifica o código de encerramento.
+
+| Cenário | Código esperado |
+|---|---|
+| Arquivo válido | `0` |
+| Arquivo misto | `1` |
+| Arquivo vazio | `1` |
+| Linha longa | `1` |
+| Arquivo ausente | `1` |
+
+O arquivo original `dados/esperados.csv` não é alterado.
+
+### Testes da conferência interativa
+
+A suíte fornece entradas pelo terminal, verifica o código
+de encerramento e procura as linhas esperadas com `grep -Fxq`.
+
+Ela não compara a saída completa do programa.
+
+| Cenário | Código esperado |
+|---|---|
+| Fim da entrada antes do operador | `1` |
+| Fim da entrada antes do valor esperado | `1` |
+| Fim da entrada antes do valor recebido | `1` |
+| Esperado `100.50`, recebido `90.80` | `0` |
+
+O cenário válido verifica os dois valores apresentados,
+a diferença `-9.70` e a classificação abaixo do esperado.
+
+### Resultado confirmado após a refatoração
+
+Leitor:
 
 ```text
-Compilando a conferencia interativa...
-PASSOU: fim antes do operador
-PASSOU: fim antes do valor esperado
-PASSOU: fim antes do valor recebido
-
-Resumo: 3 aprovados, 0 reprovados.
+Resumo: 5 aprovados, 0 reprovados.
 ```
 
-### Resultado geral
+Conferência interativa:
 
 ```text
-8 cenarios automatizados
-8 aprovados
-0 reprovados
+Resumo: 4 aprovados, 0 reprovados.
 ```
 
-Os testes automatizados ainda não são executados em uma
-pipeline de integração contínua.
+As duas suítes terminaram com código `0`.
 
-## Testes manuais realizados
+Os oito cenários anteriores foram preservados e foi
+acrescentado um cenário de pagamento válido.
 
-### Conferência interativa
+### Código de saída das suítes
 
-Foram testados:
+- `0`: todos os cenários da suíte passaram.
+- `1`: pelo menos uma verificação de cenário falhou.
+- Falhas de preparação ou compilação também interrompem
+  o script com código diferente de zero.
 
-- Valor recebido abaixo do esperado.
-- Valor recebido igual ao esperado.
-- Valor recebido acima do esperado.
-- Identificação vazia.
-- Nome ou login válido.
-- Valores monetários inválidos.
-- Nova tentativa após erro.
-- Limites monetários.
-- Fim da entrada antes do operador.
-- Fim da entrada antes do valor esperado.
-- Fim da entrada antes do valor recebido.
+Um cenário de erro passa quando o programa apresenta
+o erro esperado.
 
-Os três cenários de fim da entrada também foram automatizados.
+A suíte ainda não cobre todas as regras e limites.
+O subprograma é exercitado por meio dos programas principais;
+ainda não possui uma suíte direta de testes.
+O GitHub Actions ainda não foi configurado.
 
-### Leitura de arquivo
+## Testes manuais anteriores
 
-Foram testados:
+Foram exercitados ao longo do desenvolvimento:
 
-- Arquivo válido.
-- Arquivo misto.
-- Arquivo ausente.
-- Arquivo vazio.
-- Linha maior que 256 caracteres.
-- Ausência de separador.
-- Separador extra.
-- Identificador vazio.
-- Valor vazio.
-- Valor monetário inválido.
-- Continuação após um registro inválido.
+- Recebimentos abaixo, iguais e acima do esperado.
+- Operador vazio e login com ponto.
+- Entradas monetárias inválidas seguidas de correção.
+- Limites monetários e casas decimais.
+- Apresentação sem zeros desnecessários à esquerda.
+- Ausência e excesso de separadores.
+- Identificador vazio e valor vazio.
+- Continuação da leitura após erros.
 
-### Cenário misto
+Os cenários manuais anteriores não foram todos repetidos
+após cada alteração.
 
-Arquivo:
+### Arquivo misto usado na automação
 
 ```text
 P001;100.50
@@ -445,132 +424,36 @@ P007;99999.99
 P008;50.00;extra
 ```
 
-Resultado:
-
-| Linha | Resultado |
-|---|---|
-| 1 | Válida: `100.50` |
-| 2 | Formato monetário inválido |
-| 3 | Mais de duas casas decimais |
-| 4 | Valor acima do limite |
-| 5 | Válida: `100.50` |
-| 6 | Válida: `0.00` |
-| 7 | Válida: `99999.99` |
-| 8 | Separador extra |
-
-Totais:
-
-```text
-8 registros lidos
-4 validos
-4 invalidos
-```
-
-Código de saída:
-
-```text
-1
-```
-
-## Etapas do módulo COBOL
-
-### Bloco 1 — Testes automatizados
-
-Concluído.
-
-Foram criados testes reproduzíveis para validar automaticamente
-saídas e códigos de encerramento.
-
-### Bloco 2 — Robustez das entradas
-
-Concluído.
-
-Foram implementados:
-
-- Rejeição de arquivo vazio.
-- Rejeição explícita de linhas maiores que 256 caracteres.
-- Tratamento de fim da entrada interativa.
-- Testes automatizados para essas situações.
-
-### Bloco 3 — Organização do código
-
-Próxima etapa.
-
-Objetivo:
-
-- Organizar os programas.
-- Reduzir duplicação.
-- Compartilhar a validação monetária.
-
-### Bloco 4 — Leitura dos dois arquivos
-
-Planejado.
-
-Objetivo:
-
-- Ler pagamentos esperados.
-- Ler pagamentos recebidos.
-- Armazenar os registros.
-- Verificar identificadores duplicados.
-
-### Bloco 5 — Conciliação por identificador
-
-Planejado.
-
-Objetivo:
-
-- Comparar registros pelo identificador.
-- Permitir arquivos em ordens diferentes.
-
-### Bloco 6 — Ausências e recebimentos inesperados
-
-Planejado.
-
-Objetivo:
-
-- Identificar pagamentos esperados sem recebimento.
-- Identificar recebimentos sem previsão.
-
-### Bloco 7 — Relatório e totais
-
-Planejado.
-
-Objetivo:
-
-- Gerar relatório de conciliação.
-- Calcular totais e classificações.
-
-### Bloco 8 — Fechamento COBOL
-
-Planejado.
-
-Objetivo:
-
-- Testar o fluxo completo.
-- Finalizar a documentação.
-- Preparar o módulo para integração externa.
+Resultado esperado e confirmado:
+oito registros lidos, quatro válidos, quatro inválidos
+e código de saída `1`.
 
 ## Limitações atuais
 
 - A conferência interativa processa um pagamento por execução.
-- A entrada interativa utiliza campos de tamanho fixo.
-- O leitor trabalha apenas com pagamentos esperados.
-- O arquivo de recebimentos ainda não foi implementado.
+- Os campos de leitura interativa têm 40 posições e ainda
+  não possuem tratamento completo de excesso de tamanho.
+- O leitor valida somente o arquivo de valores esperados.
+- A medição do tamanho das linhas tem as limitações descritas acima.
 - Não existe comparação entre dois arquivos.
 - Não existe detecção de identificadores duplicados.
-- Não existe relatório final.
-- A validação monetária ainda está duplicada nos dois programas.
-- Não existe banco de dados.
-- Não existe API.
-- Não existe interface web.
-- Não existe autenticação real.
-- Não existe integração com sistemas bancários.
-- Não foi utilizado ambiente mainframe.
+- O leitor não grava relatório de saída.
+- Não há autenticação, banco de dados, API ou interface web.
+- Não há integração com sistemas bancários.
+
+## Próximas etapas
+
+- Ler e armazenar pagamentos esperados e recebidos.
+- Definir regras para identificadores e detectar duplicidades.
+- Comparar pagamentos por identificador.
+- Identificar divergências, ausências e recebimentos inesperados.
+- Gerar relatório com resultados e totais.
+- Ampliar os testes e tratar os limites de entrada pendentes.
 
 ## Evolução planejada
 
-O projeto será expandido gradualmente para uma aplicação
-completa de estudo.
+Todos os componentes abaixo fazem parte do escopo de estudo,
+em um único repositório:
 
 | Componente | Tecnologia |
 |---|---|
@@ -582,24 +465,20 @@ completa de estudo.
 | Interface alternativa | Vue |
 | Interface alternativa | React |
 
-Primeiro será concluído o módulo COBOL.
+Até o momento, somente a etapa inicial em COBOL foi implementada.
 
-Depois serão adicionados banco de dados, backend e interface web.
+Primeiro será concluída uma combinação funcional de ponta a ponta.
+Depois serão implementadas as alternativas.
 
-As alternativas em Java, .NET, Angular, Vue e React fazem parte
-do escopo planejado de aprendizado.
+Os backends deverão seguir o mesmo contrato de API.
+As três interfaces deverão ser compatíveis com ambos.
 
-## Funcionalidades futuras
+Funcionalidades web planejadas:
 
-- Autenticação.
-- Separação dos dados por usuário.
-- Envio de arquivos.
-- Execução da conciliação.
-- Histórico de execuções.
-- Visualização de detalhes.
-- Totais e indicadores.
+- Autenticação e separação dos dados por usuário.
+- Envio de arquivos para conciliação.
+- Histórico de execuções, detalhes e totais.
 - Download de relatórios.
-- Integração do módulo COBOL com aplicações externas.
 
 ## Autor
 
@@ -607,6 +486,3 @@ Bruno Ramos Lopes.
 
 Projeto educacional com dados fictícios, desenvolvido para
 aprendizado e portfólio.
-
-Não representa experiência profissional em sistemas bancários
-nem execução em ambiente mainframe.

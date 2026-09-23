@@ -7,7 +7,9 @@ pasta_teste="$(mktemp -d)"
 trap 'rm -rf -- "$pasta_teste"' EXIT
 
 echo "Compilando o leitor..."
-cobc -x -free -o "$pasta_teste/leitor" "$raiz_projeto/leitor.cob"
+cobc -x -free -o "$pasta_teste/leitor" \
+    "$raiz_projeto/leitor.cob" \
+    "$raiz_projeto/validar-monetario.cob"
 
 mkdir -p "$pasta_teste/dados"
 
