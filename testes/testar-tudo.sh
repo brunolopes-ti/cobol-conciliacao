@@ -29,6 +29,8 @@ executar_suite "interativo" "testar-ola.sh"
 executar_suite "conciliacao" "testar-conciliacao.sh"
 executar_suite "relatorio" "testar-relatorio.sh"
 executar_suite "argumentos" "testar-argumentos.sh"
+executar_suite "protecao dos arquivos" "testar-protecao-arquivos.sh"
+executar_suite "limites das entradas" "testar-limites.sh"
 
 echo
 echo "Resumo geral:"

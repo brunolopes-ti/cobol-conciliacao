@@ -9,7 +9,8 @@ trap 'rm -rf -- "$pasta_teste"' EXIT
 echo "Compilando o leitor..."
 cobc -x -free -o "$pasta_teste/leitor" \
     "$raiz_projeto/leitor.cob" \
-    "$raiz_projeto/validar-monetario.cob"
+    "$raiz_projeto/validar-monetario.cob" \
+    "$raiz_projeto/entrada-segura.c"
 
 mkdir -p "$pasta_teste/dados"
 
@@ -105,7 +106,7 @@ cp "$raiz_projeto/testes/cenarios/linha-longa.csv" \
 
 cat > "$pasta_teste/esperado.txt" <<'FIM'
 Leitura dos pagamentos esperados.
-Erro na linha 1: linha excede o limite de 256 caracteres.
+Erro na linha 1: linha excede o limite de 256 bytes.
 Total de registros lidos: 1
 Registros validos: 0
 Registros invalidos: 1

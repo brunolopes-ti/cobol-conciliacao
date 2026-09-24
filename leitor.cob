@@ -1,21 +1,17 @@
 identification division.
 program-id. leitor.
 
-environment division.
-input-output section.
-file-control.
-    select arquivo-esperados
-        assign to "dados/esperados.csv"
-        organization is line sequential
-        file status is status-arquivo.
-
 data division.
-file section.
-fd arquivo-esperados.
-01 registro-esperado pic x(1024).
-
 working-storage section.
-01 status-arquivo pic xx value spaces.
+01 status-arquivo pic 99 value zero.
+01 codigo-entrada binary-long value zero.
+01 capacidade-registro binary-long value 256.
+01 comprimento-registro binary-long value zero.
+01 tamanho-identificador binary-long value zero.
+01 posicao-separador binary-long value zero.
+01 codigo-identificador binary-long value zero.
+01 caminho-entrada-c pic x(257) value low-values.
+01 registro-esperado pic x(256) value spaces.
 01 fim-arquivo pic 9 value zero.
 01 total-registros pic 9(9) value zero.
 01 total-validos pic 9(9) value zero.
@@ -36,7 +32,8 @@ working-storage section.
 procedure division.
     display "Leitura dos pagamentos esperados."
 
-    open input arquivo-esperados
+    move z"dados/esperados.csv" to caminho-entrada-c
+    perform abrir-entrada
 
     if status-arquivo not = "00"
         display "Erro ao abrir arquivo. Codigo: " status-arquivo
@@ -45,10 +42,12 @@ procedure division.
     end-if
 
     perform until fim-arquivo = 1
-        read arquivo-esperados
+        perform ler-entrada
 
         evaluate status-arquivo
             when "00"
+            when "04"
+            when "09"
                 add 1 to total-registros
                 perform validar-registro
 
@@ -81,13 +80,13 @@ procedure division.
 
             when other
                 display "Erro na leitura. Codigo: " status-arquivo
-                close arquivo-esperados
+                perform fechar-entrada
                 move 1 to return-code
                 stop run
         end-evaluate
     end-perform
 
-    close arquivo-esperados
+    perform fechar-entrada
 
     if status-arquivo not = "00"
         display "Erro ao fechar arquivo. Codigo: " status-arquivo
@@ -122,44 +121,47 @@ procedure division.
     stop run.
 
 validar-registro.
-    move spaces to identificador-pagamento
-        valor-texto mensagem-erro
-
+    move spaces to identificador-pagamento valor-texto mensagem-erro
     move zero to quantidade-separadores
-        tamanho-registro
 
-    compute tamanho-registro =
-        function length(
-            function trim(registro-esperado trailing)
-        )
+    if status-arquivo = "04"
+        move "linha excede o limite de 256 bytes." to mensagem-erro
+        exit paragraph
+    end-if
+    if status-arquivo = "09"
+        move "linha contem controle ou UTF-8 invalido." to mensagem-erro
+        exit paragraph
+    end-if
 
-    if tamanho-registro > 256
-        move "linha excede o limite de 256 caracteres."
-            to mensagem-erro
-    else
-        inspect registro-esperado
-            tallying quantidade-separadores for all ";"
+    inspect registro-esperado
+        tallying quantidade-separadores for all ";"
+    if quantidade-separadores not = 1
+        move "informe exatamente um ponto e virgula." to mensagem-erro
+        exit paragraph
+    end-if
 
-        if quantidade-separadores not = 1
-            move "informe exatamente um ponto e virgula."
-                to mensagem-erro
-        else
-            unstring registro-esperado
-                delimited by ";"
-                into identificador-pagamento valor-texto
-            end-unstring
+    move 1 to posicao-separador
+    perform until registro-esperado(posicao-separador:1) = ";"
+        add 1 to posicao-separador
+    end-perform
+    compute tamanho-identificador = posicao-separador - 1
 
-            evaluate true
-                when function trim(identificador-pagamento) = spaces
-                    move "identificador vazio."
-                        to mensagem-erro
+    unstring registro-esperado delimited by ";"
+        into identificador-pagamento valor-texto
+    end-unstring
 
-                when function trim(valor-texto) = spaces
-                    move "valor vazio."
-                        to mensagem-erro
-            end-evaluate
-        end-if
-    end-if.
+    call static "entrada_identificador" using
+        identificador-pagamento tamanho-identificador mensagem-erro
+        returning codigo-identificador
+    end-call
+    if codigo-identificador not = zero
+        exit paragraph
+    end-if
+    if function trim(valor-texto) = spaces
+        move "valor vazio." to mensagem-erro
+        exit paragraph
+    end-if
+    continue.
 
 mostrar-registro.
     move valor-validado to valor-exibicao
@@ -168,3 +170,21 @@ mostrar-registro.
         function trim(identificador-pagamento)
         " | Valor esperado: "
         function trim(valor-exibicao).
+
+abrir-entrada.
+    call static "entrada_abrir" using caminho-entrada-c
+        returning codigo-entrada
+    end-call
+    move codigo-entrada to status-arquivo.
+
+ler-entrada.
+    call static "entrada_ler" using
+        registro-esperado capacidade-registro comprimento-registro
+        returning codigo-entrada
+    end-call
+    move codigo-entrada to status-arquivo.
+
+fechar-entrada.
+    call static "entrada_fechar" returning codigo-entrada
+    end-call
+    move codigo-entrada to status-arquivo.

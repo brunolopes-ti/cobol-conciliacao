@@ -9,7 +9,9 @@ trap 'rm -rf -- "$pasta_teste"' EXIT
 echo "Compilando a conciliacao..."
 cobc -x -free -o "$pasta_teste/conciliacao" \
     "$raiz_projeto/conciliacao.cob" \
-    "$raiz_projeto/validar-monetario.cob"
+    "$raiz_projeto/validar-monetario.cob" \
+    "$raiz_projeto/entrada-segura.c" \
+    "$raiz_projeto/relatorio-seguro.c"
 
 mkdir -p "$pasta_teste/dados"
 
@@ -36,11 +38,12 @@ acrescentar_resumo() {
         printf 'Conferidos: %s\n' "$1"
         printf 'Acima do esperado: %s\n' "$2"
         printf 'Abaixo do esperado: %s\n' "$3"
-        printf 'Sem recebimento: %s\n' "$4"
-        printf 'Sem previsao: %s\n' "$5"
-        printf 'Total esperado: %s\n' "$6"
-        printf 'Total recebido: %s\n' "$7"
-        printf 'Saldo global: %s\n' "$8"
+        printf 'Duplicados: %s\n' "$4"
+        printf 'Sem recebimento: %s\n' "$5"
+        printf 'Sem previsao: %s\n' "$6"
+        printf 'Total esperado: %s\n' "$7"
+        printf 'Total recebido: %s\n' "$8"
+        printf 'Saldo global: %s\n' "$9"
         echo "Conferencia concluida."
     } >> "$pasta_teste/esperado.txt"
 }
@@ -90,7 +93,7 @@ Recebimentos sem previsao:
 Pagamento: P004 | Recebido: 50.00 | Status: sem previsao
 FIM
 
-acrescentar_resumo 1 0 1 1 1 375.75 215.25 -160.50
+acrescentar_resumo 1 0 1 0 1 1 375.75 215.25 -160.50
 verificar_cenario "ordem diferente, ausencia e sem previsao" 0
 
 # Cenario 2: duplicidade nos recebidos
@@ -105,10 +108,15 @@ FIM
 
 cat > "$pasta_teste/esperado.txt" <<'FIM'
 Carregamento dos pagamentos.
-Erro em dados/recebidos.csv, linha 3: identificador duplicado neste arquivo.
+Conferencia dos pagamentos esperados:
+Pagamento: P001 | Esperado: 100.50 | Recebido: 90.00 | Diferenca: -10.50 | Status: duplicado
+Pagamento: P002 | Status: sem recebimento
+Pagamento: P003 | Esperado: 75.25 | Recebido: 75.25 | Diferenca: +0.00 | Status: conferido
+Recebimentos sem previsao:
 FIM
 
-verificar_cenario "duplicidade nos recebidos" 1
+acrescentar_resumo 1 0 0 1 1 0 375.75 175.25 -200.50
+verificar_cenario "duplicidade nos recebidos" 0
 
 # Cenario 3: duplicidade nos esperados
 
@@ -175,7 +183,7 @@ cp "$pasta_teste/dados/esperados.csv" \
     echo "Recebimentos sem previsao:"
 } > "$pasta_teste/esperado.txt"
 
-acrescentar_resumo 1000 0 0 0 0 1000.00 1000.00 +0.00
+acrescentar_resumo 1000 0 0 0 0 0 1000.00 1000.00 +0.00
 verificar_cenario "1000 pagamentos em cada arquivo" 0
 
 # Cenario 7: excesso de capacidade nos recebidos
@@ -212,7 +220,7 @@ Pagamento: P003 | Esperado: 100.00 | Recebido: 80.00 | Diferenca: -20.00 | Statu
 Recebimentos sem previsao:
 FIM
 
-acrescentar_resumo 1 1 1 0 0 300.00 300.00 +0.00
+acrescentar_resumo 1 1 1 0 0 0 300.00 300.00 +0.00
 verificar_cenario "igual, acima e abaixo em ordem diferente" 0
 
 # Cenario 9: nenhum identificador em comum
@@ -235,7 +243,7 @@ Pagamento: P002 | Recebido: 50.00 | Status: sem previsao
 Pagamento: P003 | Recebido: 25.00 | Status: sem previsao
 FIM
 
-acrescentar_resumo 0 0 0 1 2 100.00 75.00 -25.00
+acrescentar_resumo 0 0 0 0 1 2 100.00 75.00 -25.00
 verificar_cenario "nenhum identificador em comum" 0
 
 # Cenario 10: maior total esperado permitido
@@ -259,7 +267,7 @@ done > "$pasta_teste/dados/recebidos.csv"
     echo "Recebimentos sem previsao:"
 } > "$pasta_teste/esperado.txt"
 
-acrescentar_resumo 0 0 1000 0 0 99999990.00 0.00 -99999990.00
+acrescentar_resumo 0 0 1000 0 0 0 99999990.00 0.00 -99999990.00
 verificar_cenario "maior total esperado permitido" 0
 
 echo

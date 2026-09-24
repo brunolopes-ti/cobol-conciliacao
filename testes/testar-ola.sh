@@ -9,7 +9,8 @@ trap 'rm -rf -- "$pasta_teste"' EXIT
 echo "Compilando a conferencia interativa..."
 cobc -x -free -o "$pasta_teste/ola" \
     "$raiz_projeto/ola.cob" \
-    "$raiz_projeto/validar-monetario.cob"
+    "$raiz_projeto/validar-monetario.cob" \
+    "$raiz_projeto/entrada-segura.c"
 
 aprovados=0
 reprovados=0

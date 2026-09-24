@@ -7,8 +7,10 @@ working-storage section.
 01 valor-esperado pic 9(5)v99 value zero.
 01 valor-recebido pic 9(5)v99 value zero.
 01 diferenca pic s9(5)v99 value zero.
-01 entrada-esperado pic x(40) value spaces.
-01 entrada-recebido pic x(40) value spaces.
+01 entrada-terminal pic x(40) value spaces.
+01 capacidade-entrada binary-long value 40.
+01 tamanho-entrada binary-long value zero.
+01 codigo-entrada binary-long value zero.
 01 esperado-valido pic 9 value zero.
 01 recebido-valido pic 9 value zero.
 
@@ -29,13 +31,17 @@ procedure division.
     perform until nome-operador not = spaces
         display "Digite o nome ou login do operador:"
 
-        accept nome-operador
-            on exception
-                display
-                    "Erro: entrada encerrada antes de informar o operador."
-                move 1 to return-code
-                stop run
-        end-accept
+        perform ler-terminal
+        if codigo-entrada = 10
+            display "Erro: entrada encerrada antes de informar o operador."
+            move 1 to return-code
+            stop run
+        end-if
+        if codigo-entrada not = zero
+            perform mostrar-erro-terminal
+        else
+            move entrada-terminal to nome-operador
+        end-if
 
         if nome-operador = spaces
             display "Erro: informe o nome do operador."
@@ -49,22 +55,22 @@ procedure division.
     perform until esperado-valido = 1
         display "Digite o valor esperado (exemplo: 100.50):"
 
-        accept entrada-esperado
-            on exception
-                display
-                    "Erro: entrada encerrada antes do valor esperado."
-                move 1 to return-code
-                stop run
-        end-accept
-
-        move entrada-esperado to entrada-validacao
-
-        call "validar-monetario" using
-            entrada-validacao
-            validacao-ok
-            valor-validado
-            mensagem-erro
-        end-call
+        perform ler-terminal
+        if codigo-entrada = 10
+            display "Erro: entrada encerrada antes do valor esperado."
+            move 1 to return-code
+            stop run
+        end-if
+        move zero to validacao-ok
+        if codigo-entrada not = zero
+            perform mostrar-erro-terminal
+            move "entrada rejeitada; tente novamente." to mensagem-erro
+        else
+            move entrada-terminal to entrada-validacao
+            call "validar-monetario" using
+                entrada-validacao validacao-ok valor-validado mensagem-erro
+            end-call
+        end-if
 
         if validacao-ok = 1
             move valor-validado to valor-esperado
@@ -80,22 +86,22 @@ procedure division.
     perform until recebido-valido = 1
         display "Digite o valor recebido (exemplo: 80.25):"
 
-        accept entrada-recebido
-            on exception
-                display
-                    "Erro: entrada encerrada antes do valor recebido."
-                move 1 to return-code
-                stop run
-        end-accept
-
-        move entrada-recebido to entrada-validacao
-
-        call "validar-monetario" using
-            entrada-validacao
-            validacao-ok
-            valor-validado
-            mensagem-erro
-        end-call
+        perform ler-terminal
+        if codigo-entrada = 10
+            display "Erro: entrada encerrada antes do valor recebido."
+            move 1 to return-code
+            stop run
+        end-if
+        move zero to validacao-ok
+        if codigo-entrada not = zero
+            perform mostrar-erro-terminal
+            move "entrada rejeitada; tente novamente." to mensagem-erro
+        else
+            move entrada-terminal to entrada-validacao
+            call "validar-monetario" using
+                entrada-validacao validacao-ok valor-validado mensagem-erro
+            end-call
+        end-if
 
         if validacao-ok = 1
             move valor-validado to valor-recebido
@@ -131,3 +137,22 @@ procedure division.
 
     move zero to return-code
     stop run.
+
+ler-terminal.
+    call static "entrada_terminal" using
+        entrada-terminal capacidade-entrada tamanho-entrada
+        returning codigo-entrada
+    end-call
+    if codigo-entrada = 30
+        display "Erro: falha na leitura da entrada."
+        move 1 to return-code
+        stop run
+    end-if.
+
+mostrar-erro-terminal.
+    evaluate codigo-entrada
+        when 4
+            display "Erro: entrada excede o limite de 40 bytes."
+        when other
+            display "Erro: entrada contem controle ou UTF-8 invalido."
+    end-evaluate.

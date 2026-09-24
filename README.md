@@ -4,8 +4,8 @@ Projeto de aprendizado e portfólio para comparar cobranças e
 pagamentos, identificar divergências e produzir relatórios.
 
 O motor utiliza GnuCOBOL no Ubuntu. O projeto também possui
-scripts PostgreSQL para estrutura, dados de teste, consultas
-de conciliação e validação dos resultados.
+scripts PostgreSQL para estrutura, dados de teste, consultas,
+restrições e validação dos resultados.
 
 O código COBOL não foi executado em ambiente mainframe.
 Os dados utilizados são fictícios.
@@ -18,16 +18,23 @@ Os dados utilizados são fictícios.
 | Leitura e validação de arquivo | Implementada |
 | Validação monetária compartilhada | Implementada |
 | Conciliação entre dois arquivos | Implementada |
+| Tratamento de pagamentos recebidos duplicados | Implementado |
 | Resumo financeiro e relatório TXT | Implementados |
 | Caminhos por argumentos de terminal | Implementados |
-| Testes automatizados COBOL | 28 cenários aprovados |
-| Estrutura e views PostgreSQL | Implementadas e validadas em banco separado |
-| Integração entre banco e COBOL | Pendente |
-| Backends Java e .NET | Planejados |
-| Interfaces Angular, Vue e React | Planejadas |
+| Proteções adicionais de entrada e relatório | Implementadas |
+| Testes automatizados COBOL | 7 suítes aprovadas |
+| Estrutura, views e restrições PostgreSQL | Implementadas e validadas |
+| Integração direta entre banco e COBOL | Pendente |
+| Backend Java | Planejado |
+| Backend .NET | Planejado |
+| Interface Angular | Planejada |
+| Interfaces Vue e React | Planejadas |
 
 O banco e o motor COBOL ainda funcionam separadamente.
+
 A aplicação web ainda não foi implementada.
+
+---
 
 ## Programas COBOL
 
@@ -35,13 +42,23 @@ A aplicação web ainda não foi implementada.
 |---|---|
 | `ola.cob` | Conferência interativa de um pagamento |
 | `leitor.cob` | Leitura e validação dos pagamentos esperados |
-| `conciliacao.cob` | Comparação dos arquivos, totais e relatório |
+| `conciliacao.cob` | Comparação dos arquivos, classificação, totais e relatório |
 | `validar-monetario.cob` | Validação monetária compartilhada |
 
 Os três programas principais utilizam o mesmo subprograma
 de validação monetária.
 
-### Conferência interativa
+O projeto também utiliza pequenas rotinas auxiliares em C para
+fortalecer operações que dependem do sistema operacional.
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `entrada-segura.c` | Apoio à leitura segura de argumentos, arquivos e identificadores |
+| `relatorio-seguro.c` | Apoio à geração e publicação segura do relatório |
+
+---
+
+## Conferência interativa
 
 O programa `ola.cob`:
 
@@ -53,36 +70,58 @@ O programa `ola.cob`:
 - Calcula e apresenta a diferença.
 - Classifica o pagamento como conferido, acima ou abaixo do esperado.
 
-O nome do operador é informativo. Não existe autenticação.
+O nome do operador é apenas informativo.
 
-### Leitor
+Não existe autenticação.
 
-O programa `leitor.cob` lê `dados/esperados.csv`.
+---
 
-Ele informa erros por linha, continua analisando os registros
-seguintes e apresenta os totais de registros lidos, válidos
-e inválidos.
+## Leitor
 
-O leitor não verifica duplicidade de identificadores.
-Essa verificação está no programa `conciliacao.cob`.
+O programa `leitor.cob` lê:
 
-### Motor de conciliação
+```text
+dados/esperados.csv
+```
+
+Ele:
+
+- valida a estrutura das linhas;
+- valida valores monetários;
+- informa erros por linha;
+- continua analisando os registros seguintes quando aplicável;
+- apresenta totais de registros lidos, válidos e inválidos;
+- rejeita arquivos vazios;
+- identifica entradas que ultrapassam os limites estabelecidos.
+
+A validação monetária é feita pelo mesmo subprograma
+`validar-monetario.cob` utilizado pelos demais programas.
+
+---
+
+## Motor de conciliação
 
 O programa `conciliacao.cob`:
 
 - Carrega pagamentos esperados e recebidos.
 - Rejeita arquivos vazios.
 - Valida estrutura e valores monetários.
-- Rejeita identificadores duplicados dentro de cada arquivo.
+- Valida identificadores.
 - Armazena até 1000 registros por arquivo.
-- Compara os pagamentos pelo identificador, independentemente da ordem.
+- Compara pagamentos pelo identificador independentemente da ordem.
 - Identifica valores iguais, acima e abaixo do esperado.
 - Identifica cobranças sem recebimento.
 - Identifica recebimentos sem previsão.
-- Apresenta contagens, totais e saldo global.
-- Grava um relatório TXT.
+- Identifica pagamentos recebidos duplicados.
+- Apresenta contagens e totais.
+- Calcula o saldo global.
+- Gera relatório TXT.
+- Permite caminhos personalizados por argumentos.
+- Utiliza rotinas auxiliares para proteção das operações de arquivo.
 
 O carregamento é interrompido quando encontra uma entrada inválida.
+
+---
 
 ## Formato dos arquivos
 
@@ -111,33 +150,44 @@ P004;50.00
 ```
 
 Identificador e valor precisam estar preenchidos.
-Espaços nas extremidades do identificador são removidos.
-A comparação dos identificadores distingue letras maiúsculas
+
+A comparação dos identificadores diferencia letras maiúsculas
 e minúsculas.
 
-Não há suporte a campos entre aspas contendo ponto e vírgula.
+Não há suporte a campos CSV entre aspas contendo ponto e vírgula.
+
+---
 
 ## Validação monetária
 
-Regras compartilhadas em `validar-monetario.cob`:
+As regras compartilhadas estão implementadas em
+`validar-monetario.cob`.
+
+Regras:
 
 - Valores entre `0` e `99999.99`, inclusive.
-- Inteiros ou números com uma ou duas casas decimais.
-- Ponto como separador decimal.
-- Zeros à esquerda permitidos.
-- Espaços nas extremidades permitidos.
-- Sinais, vírgulas, letras e espaços internos rejeitados.
-- Múltiplos pontos rejeitados.
-- Quando existe ponto, são necessários dígitos antes e depois dele.
+- Inteiros são aceitos.
+- Uma ou duas casas decimais são aceitas.
+- O separador decimal é o ponto.
+- Zeros à esquerda são permitidos.
+- Espaços externos tratados conforme o contrato de entrada.
+- Sinais não são permitidos.
+- Vírgulas não são permitidas.
+- Letras não são permitidas.
+- Espaços internos não são permitidos.
+- Múltiplos pontos são rejeitados.
+- Quando existe ponto decimal, são necessários dígitos antes e depois dele.
 - Mais de duas casas decimais são rejeitadas.
+
+Exemplos:
 
 | Entrada | Resultado |
 |---|---|
 | `0` | Aceita |
 | `100` | Aceita |
 | `100.5` | Aceita |
+| `100.50` | Aceita |
 | `00100.50` | Aceita |
-| ` 100.50 ` | Aceita |
 | `99999.99` | Aceita |
 | `abc` | Rejeitada |
 | `+100.50` | Rejeitada |
@@ -151,7 +201,7 @@ Regras compartilhadas em `validar-monetario.cob`:
 
 ### Contrato do subprograma
 
-Os campos são passados por `CALL ... USING`, nesta ordem:
+Os campos são passados por `CALL ... USING` nesta ordem:
 
 | Campo | Definição COBOL | Finalidade |
 |---|---|---|
@@ -160,17 +210,26 @@ Os campos são passados por `CALL ... USING`, nesta ordem:
 | `valor-validado` | `PIC 9(5)V99` | Valor convertido |
 | `mensagem-erro` | `PIC X(80)` | Motivo da rejeição |
 
-O subprograma reinicializa as saídas a cada chamada, valida antes
-da conversão e retorna ao chamador com `GOBACK`.
+O subprograma:
 
-Ele não lê teclado, abre arquivos ou exibe mensagens.
-Não recupera conteúdo truncado antes da chamada.
+- reinicializa as saídas a cada chamada;
+- valida antes da conversão;
+- não abre arquivos;
+- não lê teclado;
+- não exibe mensagens diretamente;
+- retorna ao chamador com `GOBACK`.
+
+---
 
 ## Regras da conciliação COBOL
+
+A diferença básica é calculada por:
 
 ```text
 Diferença = valor recebido - valor esperado
 ```
+
+### Classificações
 
 | Situação | Classificação |
 |---|---|
@@ -179,29 +238,105 @@ Diferença = valor recebido - valor esperado
 | Recebido menor que esperado | Abaixo do esperado |
 | Identificador apenas nos esperados | Sem recebimento |
 | Identificador apenas nos recebidos | Sem previsão |
+| Mais de um recebimento para o mesmo identificador esperado | Duplicado |
 
-O saldo global considera todos os registros aceitos:
+### Pagamentos duplicados
+
+Identificadores duplicados no arquivo de valores esperados são
+considerados entrada inválida.
+
+Pagamentos recebidos podem possuir mais de uma ocorrência para
+o mesmo identificador.
+
+Nesse caso:
+
+- o primeiro recebimento encontrado é tratado como pagamento principal;
+- a cobrança é classificada como `duplicado`;
+- os recebimentos adicionais do mesmo identificador também são
+  reconhecidos como pertencentes àquela cobrança;
+- esses recebimentos adicionais não são classificados como
+  `sem previsão`;
+- o total recebido continua considerando todos os registros recebidos.
+
+Essa política é uma regra didática definida para esta versão
+do projeto.
+
+---
+
+## Resumo da conciliação
+
+O relatório apresenta contadores semelhantes a:
+
+```text
+Resumo da conciliacao:
+Conferidos: 1
+Acima do esperado: 0
+Abaixo do esperado: 1
+Duplicados: 0
+Sem recebimento: 1
+Sem previsao: 1
+```
+
+Também são exibidos:
+
+```text
+Total esperado
+Total recebido
+Saldo global
+```
+
+O saldo global é:
 
 ```text
 Saldo global = total recebido - total esperado
 ```
 
-Um saldo global igual a zero não garante que todos os pagamentos
-estejam conferidos: diferenças entre identificadores podem se compensar.
+Um saldo global igual a zero não significa necessariamente que
+todos os pagamentos estejam corretos.
+
+Valores acima e abaixo do esperado podem se compensar
+financeiramente.
+
+---
+
+## Limites e proteção das entradas
+
+A versão atual possui validações adicionais de entrada.
+
+Entre os casos cobertos estão:
+
+- argumentos acima do limite;
+- caminhos vazios;
+- caminhos terminados incorretamente;
+- linhas acima do limite suportado;
+- entradas inválidas;
+- caracteres de controle;
+- entradas de texto inválidas;
+- identificadores fora do contrato estabelecido;
+- proteção contra uso inadequado dos arquivos de entrada e saída.
+
+As validações foram exercitadas por uma suíte automatizada
+específica de limites.
+
+---
 
 ## Ambiente utilizado
 
 - Ubuntu 24.04 LTS em VirtualBox.
 - GnuCOBOL 3.1.2.
-- Bash e utilitários como `diff`, `grep` e `mktemp`.
-- Git e GitHub.
-- Editor Nano.
+- Bash.
+- GCC.
+- Git.
+- GitHub.
+- VS Code / terminal.
 - Acesso ao Ubuntu por SSH a partir do Windows.
-- PostgreSQL 18.2 no Windows.
-- Cliente `psql` 16.15 no Ubuntu.
+- PostgreSQL 18 no Windows.
+- Cliente `psql` no Ubuntu.
 
-A conexão do Ubuntu ao PostgreSQL no Windows foi testada
-com autenticação.
+A comunicação do Ubuntu com o PostgreSQL instalado no Windows
+foi testada com autenticação.
+
+---
 
 ## Compilação e execução
 
@@ -210,25 +345,50 @@ Execute os comandos a partir da raiz do projeto.
 ### Conferência interativa
 
 ```bash
-cobc -x -free -o ola ola.cob validar-monetario.cob
+cobc -x -free -o ola \
+    ola.cob \
+    validar-monetario.cob \
+    entrada-segura.c
+```
+
+Execute:
+
+```bash
 ./ola
 ```
 
 ### Leitor
 
 ```bash
-cobc -x -free -o leitor leitor.cob validar-monetario.cob
+cobc -x -free -o leitor \
+    leitor.cob \
+    validar-monetario.cob \
+    entrada-segura.c
+```
+
+Execute:
+
+```bash
 ./leitor
 ```
 
 ### Conciliação
 
 ```bash
-cobc -x -free -o conciliacao conciliacao.cob validar-monetario.cob
+cobc -x -free -o conciliacao \
+    conciliacao.cob \
+    validar-monetario.cob \
+    entrada-segura.c \
+    relatorio-seguro.c
+```
+
+Execute:
+
+```bash
 ./conciliacao
 ```
 
-Sem argumentos, a conciliação utiliza:
+Sem argumentos, são utilizados:
 
 | Finalidade | Caminho |
 |---|---|
@@ -239,19 +399,28 @@ Sem argumentos, a conciliação utiliza:
 Também é possível informar os três caminhos:
 
 ```bash
-./conciliacao "dados/esperados.csv" "dados/recebidos.csv" "relatorio.txt"
+./conciliacao \
+    "dados/esperados.csv" \
+    "dados/recebidos.csv" \
+    "relatorio.txt"
 ```
 
-A ordem é: esperados, recebidos e relatório.
+A ordem é:
 
-São aceitos zero ou três argumentos. Caminhos com espaços
-devem ser colocados entre aspas.
+```text
+esperados recebidos relatorio
+```
+
+São aceitos zero ou três argumentos.
+
+Caminhos contendo espaços devem ser colocados entre aspas.
 
 Os caminhos relativos são interpretados a partir da pasta
-onde o programa é executado. A pasta de destino do relatório
-precisa existir.
+onde o programa é executado.
 
-### Opções do compilador
+---
+
+## Opções do compilador
 
 | Opção | Significado |
 |---|---|
@@ -259,15 +428,17 @@ precisa existir.
 | `-free` | Utiliza formato livre de código COBOL |
 | `-o` | Define o nome do executável |
 
-O programa principal deve aparecer antes do subprograma
-no comando de compilação.
+Após modificar código COBOL ou as rotinas auxiliares utilizadas
+por um executável, ele deve ser recompilado.
 
-Após modificar código COBOL, recompile os executáveis afetados.
-Alterações somente nos dados ou na documentação não exigem recompilação.
+Alterações somente em arquivos CSV ou documentação não exigem
+recompilação.
 
-Ao alterar `validar-monetario.cob`, recompile os três programas principais.
+---
 
 ## Resultado do exemplo
+
+Com os arquivos padrão do projeto, a saída inclui:
 
 ```text
 Carregamento dos pagamentos.
@@ -281,6 +452,7 @@ Resumo da conciliacao:
 Conferidos: 1
 Acima do esperado: 0
 Abaixo do esperado: 1
+Duplicados: 0
 Sem recebimento: 1
 Sem previsao: 1
 Total esperado: 375.75
@@ -289,20 +461,18 @@ Saldo global: -160.50
 Conferencia concluida.
 ```
 
-O relatório contém os resultados a partir de
-`Conferencia dos pagamentos esperados:`.
+---
 
 ## Relatório e códigos de saída
 
-Os dois arquivos de entrada são validados antes da abertura
-do relatório para escrita.
+Os arquivos de entrada são validados antes da publicação
+do relatório final.
 
-Uma entrada inválida preserva o relatório anterior.
-Uma execução válida substitui o relatório existente.
+O projeto utiliza uma rotina auxiliar específica para as operações
+do relatório.
 
-São verificadas as operações de abertura, escrita e fechamento.
-A escrita ainda não é atômica: uma falha durante a gravação
-pode deixar um relatório incompleto.
+São tratadas falhas nas etapas necessárias para geração
+e publicação da saída.
 
 | Código | Significado |
 |---|---|
@@ -311,100 +481,160 @@ pode deixar um relatório incompleto.
 | `2` | Uso incorreto dos argumentos da conciliação |
 
 Divergências financeiras são resultados do processamento.
+
 Elas não tornam o código de saída diferente de zero.
 
-Para consultar o código imediatamente após a execução:
+Para consultar o código depois da execução:
 
 ```bash
 echo $?
 ```
 
-## Testes automatizados
+---
 
-Execute todas as suítes:
+# Testes automatizados
+
+Execute todas as suítes com:
 
 ```bash
 bash testes/testar-tudo.sh
 ```
 
-Os scripts compilam os programas em pastas temporárias.
-Não é necessário compilar manualmente antes dos testes.
+Os testes compilam os programas necessários em áreas temporárias.
 
-| Suíte | Cenários |
-|---|---:|
-| Leitor | 5 |
-| Conferência interativa | 4 |
-| Conciliação | 10 |
-| Relatório | 3 |
-| Argumentos | 6 |
-| **Total** | **28** |
+Não é necessário compilar manualmente antes da execução
+das suítes.
 
-Resultado confirmado na execução local: 28 cenários aprovados,
-cinco suítes aprovadas e código de saída `0`.
+## Suítes atuais
 
-### Cobertura atual
+O projeto possui sete suítes automatizadas:
 
-- Arquivos válidos, mistos, vazios e ausentes.
-- Registro acima do limite testado.
-- Encerramento da entrada interativa antes dos campos obrigatórios.
-- Conferência interativa com valores válidos.
+| Suíte | Finalidade |
+|---|---|
+| Leitor | Validação da leitura de arquivos |
+| Conferência interativa | Entrada e cálculo interativo |
+| Conciliação | Regras de comparação entre arquivos |
+| Relatório | Conteúdo e comportamento do relatório |
+| Argumentos | Caminhos e argumentos de terminal |
+| Limites das entradas | Limites e entradas inválidas |
+| Proteção de arquivos | Segurança dos arquivos de entrada e saída |
+
+Resultado confirmado localmente:
+
+```text
+Suites aprovadas: 7
+Suites reprovadas: 0
+VERIFICACAO COMPLETA: PASSOU
+```
+
+---
+
+## Cobertura atual dos testes
+
+Os testes incluem cenários para:
+
+- Arquivos válidos.
+- Arquivos mistos.
+- Arquivos vazios.
+- Arquivos ausentes.
+- Registros inválidos.
+- Valores monetários inválidos.
+- Encerramento da entrada interativa.
+- Conferência de pagamento válido.
 - Identificadores em ordens diferentes.
-- Duplicidade nos esperados e nos recebidos.
-- Valor inválido nos recebidos.
-- Arquivos sem identificadores em comum.
-- Valores iguais, acima e abaixo do esperado.
-- Capacidade de 1000 registros por arquivo.
-- Rejeição de 1001 registros nos recebidos.
-- Maior total esperado permitido.
+- Valores iguais.
+- Valores acima do esperado.
+- Valores abaixo do esperado.
+- Cobranças sem recebimento.
+- Recebimentos sem previsão.
+- Duplicidade nos valores esperados.
+- Duplicidade nos pagamentos recebidos.
+- Classificação de recebimentos duplicados.
+- Capacidade de 1000 registros.
+- Rejeição de excesso de capacidade.
+- Valores monetários próximos dos limites.
 - Conteúdo completo do relatório.
-- Preservação do relatório anterior diante de entrada inválida.
-- Falha na abertura do relatório.
-- Caminhos personalizados contendo espaços.
+- Preservação do comportamento esperado diante de falhas.
+- Caminhos personalizados.
+- Caminhos contendo espaços.
 - Quantidade incorreta de argumentos.
-- Caminho vazio ou acima do limite.
-- Caminho do relatório textualmente igual a uma entrada.
-- Arquivo de entrada personalizado inexistente.
+- Caminhos vazios.
+- Caminhos acima do limite.
+- Limites de entradas.
+- Proteção dos arquivos utilizados pelo processamento.
 
 As suítes verificam códigos de saída e resultados esperados.
-A suíte interativa verifica linhas específicas; ela não compara
-a saída inteira.
 
-Os testes não cobrem todas as combinações possíveis.
-Falhas durante escrita e fechamento do relatório ainda não
-foram simuladas.
+Os testes não representam todas as combinações possíveis,
+mas cobrem os principais fluxos e casos de erro atualmente
+previstos para o projeto.
 
 O GitHub Actions ainda não foi configurado.
 
-## PostgreSQL
+---
 
-O ambiente possui um usuário próprio da aplicação,
-`conciliacao_app`, e o banco `conciliacao_pagamentos`.
+# PostgreSQL
 
-A reprodução dos scripts foi exercitada em um banco separado,
-`conciliacao_teste`.
+O projeto possui uma implementação relacional das regras
+de conciliação.
 
-### Tabelas
+O ambiente de desenvolvimento utiliza um usuário próprio:
+
+```text
+conciliacao_app
+```
+
+e o banco:
+
+```text
+conciliacao_pagamentos
+```
+
+Também foi utilizado um banco separado para testes de
+reprodutibilidade.
+
+---
+
+## Tabelas
 
 | Tabela | Finalidade |
 |---|---|
 | `cobrancas` | Identificadores e valores esperados |
-| `pagamentos` | Identificadores de cobrança e valores pagos |
+| `pagamentos` | Identificadores e valores efetivamente pagos |
 
 As cobranças possuem identificador único.
-Valores negativos são rejeitados.
 
 A tabela de pagamentos permite múltiplos registros para
-o mesmo identificador e pagamentos sem cobrança correspondente.
-Isso permite identificar esses casos nas consultas.
+o mesmo identificador.
 
-### Views
+Isso permite representar e analisar pagamentos duplicados.
 
-| View | Finalidade |
-|---|---|
-| `vw_conciliacao_completa` | Classificação por identificador |
-| `vw_resumo_financeiro` | Métricas financeiras do cenário |
+Também é possível representar pagamento sem cobrança
+correspondente para que o caso possa ser detectado
+pela conciliação.
 
-Classificações SQL implementadas:
+---
+
+## Contrato de dados PostgreSQL
+
+As restrições do banco foram fortalecidas para aproximar
+o comportamento do PostgreSQL das regras utilizadas pelo
+processamento COBOL.
+
+O conjunto de scripts inclui validações adicionais para
+entradas, identificadores e valores monetários.
+
+Os casos de restrição possuem testes próprios.
+
+---
+
+## Views
+
+### `vw_conciliacao_completa`
+
+Realiza a classificação principal dos registros.
+
+Status implementados:
 
 - `CORRETO`
 - `DIVERGENTE`
@@ -412,21 +642,61 @@ Classificações SQL implementadas:
 - `COBRANCA INEXISTENTE`
 - `SEM PAGAMENTO`
 
-### Scripts reproduzíveis
+Na política atual de pagamentos repetidos, o primeiro pagamento
+de cada identificador é considerado o pagamento principal para
+efeito da análise.
 
-Execute os scripts nesta ordem em um banco de testes preparado:
+Pagamentos posteriores são tratados como ocorrências duplicadas.
 
-| Arquivo | Finalidade |
-|---|---|
-| `sql/01-estrutura.sql` | Criação das tabelas |
-| `sql/02-dados-teste.sql` | Carga dos dados fictícios |
-| `sql/03-views.sql` | Criação das views |
-| `sql/04-validacao.sql` | Validação dos resultados |
+### `vw_resumo_financeiro`
 
-Os quatro scripts foram executados em um banco vazio separado.
-Os cinco status e as métricas financeiras foram conferidos.
+Produz métricas financeiras consolidadas.
 
-Valores confirmados para o cenário SQL:
+Entre as métricas estão:
+
+- total esperado;
+- total recebido bruto;
+- total duplicado;
+- total relacionado a cobrança inexistente;
+- total pago válido;
+- valor pendente;
+- valor excedente;
+- saldo líquido.
+
+Pendência e excedente são tratados separadamente para evitar
+que um pagamento acima do esperado em uma cobrança esconda
+uma dívida existente em outra.
+
+---
+
+## Cenário SQL utilizado
+
+Os dados fictícios incluem cobranças como:
+
+```text
+COB001
+COB002
+COB003
+COB004
+```
+
+e um pagamento associado a:
+
+```text
+COB999
+```
+
+sem cobrança correspondente.
+
+O cenário contempla:
+
+- pagamento correto;
+- pagamento divergente;
+- pagamento duplicado;
+- cobrança sem pagamento;
+- pagamento sem cobrança.
+
+Para o conjunto principal de dados utilizado nos testes:
 
 | Métrica | Valor |
 |---|---:|
@@ -436,109 +706,210 @@ Valores confirmados para o cenário SQL:
 | Total de cobrança inexistente | 50.00 |
 | Total pago válido | 355.75 |
 | Valor pendente | 110.00 |
+| Valor excedente | 0.00 |
+| Saldo líquido | -110.00 |
 
-Esses dados de teste são diferentes dos exemplos CSV do COBOL.
+Os dados SQL utilizados para teste não são os mesmos arquivos
+CSV usados no exemplo COBOL.
 
-### Alinhamento pendente
+---
 
-O COBOL rejeita identificadores duplicados no arquivo.
-O SQL armazena pagamentos repetidos e os classifica como duplicados.
+## Scripts SQL
 
-As duas implementações ainda não possuem um contrato integrado
-de tratamento de duplicidades e resultados.
+| Arquivo | Finalidade |
+|---|---|
+| `sql/01-estrutura.sql` | Criação da estrutura principal |
+| `sql/02-dados-teste.sql` | Carga dos dados fictícios |
+| `sql/03-views.sql` | Criação das views de conciliação e resumo |
+| `sql/04-validacao.sql` | Validação do cenário esperado |
+| `sql/05-restricoes.sql` | Restrições adicionais do contrato de dados |
+| `sql/06-testar-restricoes.sql` | Testes das restrições do banco |
 
-Não existe conexão direta do código COBOL com o PostgreSQL.
+Os scripts foram exercitados em ambiente PostgreSQL de teste.
 
-## Organização dos arquivos
+As verificações incluem tanto o cenário válido quanto entradas
+que devem ser rejeitadas.
+
+---
+
+## Alinhamento entre COBOL e PostgreSQL
+
+O tratamento de pagamentos recebidos duplicados foi alinhado
+entre as duas implementações.
+
+A política adotada é:
+
+```text
+primeiro recebimento = principal
+recebimentos adicionais = duplicados
+```
+
+No COBOL, pagamentos repetidos deixam de invalidar todo o arquivo
+de recebidos.
+
+A ocorrência é processada e classificada como duplicada.
+
+Identificadores duplicados no arquivo de valores esperados
+continuam sendo rejeitados.
+
+Ainda não existe conexão direta entre o código COBOL e
+o PostgreSQL.
+
+Essa integração será realizada por uma camada de backend.
+
+---
+
+# Organização dos arquivos
 
 | Caminho | Finalidade |
 |---|---|
 | `ola.cob` | Programa interativo |
-| `leitor.cob` | Leitor de registros |
+| `leitor.cob` | Leitor de pagamentos esperados |
 | `conciliacao.cob` | Motor de conciliação |
-| `validar-monetario.cob` | Subprograma monetário |
-| `dados/esperados.csv` | Exemplo de valores esperados |
-| `dados/recebidos.csv` | Exemplo de valores recebidos |
-| `testes/cenarios/` | Arquivos de teste do leitor |
+| `validar-monetario.cob` | Subprograma monetário compartilhado |
+| `entrada-segura.c` | Rotinas auxiliares de entrada |
+| `relatorio-seguro.c` | Rotinas auxiliares do relatório |
+| `dados/esperados.csv` | Valores esperados de exemplo |
+| `dados/recebidos.csv` | Valores recebidos de exemplo |
+| `testes/cenarios/` | Dados auxiliares de teste |
 | `testes/testar-leitor.sh` | Suíte do leitor |
 | `testes/testar-ola.sh` | Suíte interativa |
 | `testes/testar-conciliacao.sh` | Suíte da conciliação |
 | `testes/testar-relatorio.sh` | Suíte do relatório |
 | `testes/testar-argumentos.sh` | Suíte dos argumentos |
+| `testes/testar-limites.sh` | Suíte de limites das entradas |
+| `testes/testar-protecao-arquivos.sh` | Suíte de proteção dos arquivos |
 | `testes/testar-tudo.sh` | Execução conjunta das suítes |
-| `sql/` | Estrutura, dados, views e validação PostgreSQL |
-| `.gitignore` | Exclusão dos executáveis e do relatório padrão |
-| `README.md` | Documentação |
+| `sql/01-estrutura.sql` | Estrutura PostgreSQL |
+| `sql/02-dados-teste.sql` | Massa de teste SQL |
+| `sql/03-views.sql` | Views SQL |
+| `sql/04-validacao.sql` | Validação do cenário SQL |
+| `sql/05-restricoes.sql` | Restrições adicionais |
+| `sql/06-testar-restricoes.sql` | Testes das restrições |
+| `.gitignore` | Arquivos locais que não devem ser versionados |
+| `README.md` | Documentação do projeto |
 
-Os executáveis `ola`, `leitor` e `conciliacao`, além do
-`relatorio.txt` da raiz, são gerados localmente e não são versionados.
+Os executáveis gerados localmente não são versionados.
 
-Relatórios com outros nomes não são automaticamente ignorados.
+O relatório padrão da raiz também não é versionado.
 
-## Limitações atuais
+---
 
-- Até 1000 registros por arquivo na conciliação.
-- Os dois arquivos da conciliação precisam conter registros.
-- Identificadores possuem validação de preenchimento, mas ainda
-  não têm uma regra estrita de caracteres permitidos.
+# Limitações atuais
+
+O projeto é educacional e de portfólio.
+
+As principais limitações atuais são:
+
+- Até 1000 registros por arquivo no motor COBOL.
+- Os arquivos utilizados pela conciliação precisam possuir registros.
+- A busca COBOL por correspondências ainda é linear.
 - A comparação de identificadores diferencia maiúsculas e minúsculas.
-- A busca por correspondências é linear.
-- O campo de leitura de arquivo possui 1024 posições.
-- A verificação de 256 posições desconsidera espaços finais;
-  ela não garante detectar todo excesso de tamanho físico da linha.
-- Campos interativos de 40 posições ainda podem truncar entradas maiores.
-- Caminhos têm limite de 256 posições e não suportam espaços finais.
-- A proteção contra sobrescrever uma entrada compara apenas o texto
-  dos caminhos. Caminhos equivalentes e links simbólicos ainda
-  não são identificados.
-- A gravação do relatório não é atômica.
-- Os resultados do motor são textuais.
-- Banco e COBOL ainda não estão integrados.
-- Não há autenticação, isolamento por usuário, API ou interface web.
-- Não há integração com sistemas bancários.
-- O projeto ainda não está preparado para uso em produção.
+- Não existe parser CSV completo com suporte a campos complexos entre aspas.
+- A política de considerar o primeiro recebimento como principal é uma regra didática.
+- Os resultados do motor COBOL ainda são predominantemente textuais.
+- COBOL e PostgreSQL ainda não estão conectados diretamente.
+- Não existe API.
+- Não existe interface web.
+- Não existe autenticação.
+- Não existe isolamento de dados por usuário.
+- Não existe integração com sistemas bancários reais.
+- O projeto não está preparado para uso em produção.
+- O GitHub Actions ainda não foi configurado.
 
-## Próximas etapas
+---
 
-- Alinhar as regras entre o banco e o motor COBOL.
-- Definir o contrato de integração.
-- Implementar o backend Java e sua integração com PostgreSQL e COBOL.
-- Implementar autenticação e separação dos dados por usuário.
-- Construir a interface Angular.
-- Implementar o backend .NET e as interfaces Vue e React.
-- Ampliar os testes e configurar integração contínua.
-- Tratar as limitações de entrada e geração de relatório.
+# Próximas etapas
 
-## Evolução planejada
+As próximas etapas previstas são:
 
-Todos os componentes abaixo fazem parte do escopo de estudo:
+1. Consolidar o contrato de integração entre COBOL, PostgreSQL e backend.
+2. Implementar o backend Java com Spring Boot.
+3. Conectar o backend ao PostgreSQL.
+4. Integrar o backend ao processamento COBOL.
+5. Criar endpoints REST para cobranças, pagamentos, conciliação e resumo.
+6. Implementar autenticação e separação de dados por usuário.
+7. Construir a interface Angular.
+8. Adicionar Docker ao ambiente da aplicação.
+9. Configurar integração contínua.
+10. Implementar posteriormente o backend alternativo em .NET.
+11. Implementar posteriormente as interfaces alternativas em Vue e React.
 
-| Componente | Tecnologia |
+---
+
+# Evolução planejada
+
+O projeto foi planejado como exercício de evolução incremental
+de uma aplicação.
+
+| Camada | Tecnologia |
 |---|---|
-| Motor de conciliação | COBOL |
+| Processamento de conciliação | COBOL |
 | Banco de dados | PostgreSQL |
-| Backend | Java |
-| Backend alternativo | C# com .NET |
-| Interface web | Angular |
+| Backend principal | Java / Spring Boot |
+| Backend alternativo | C# / .NET |
+| Interface principal | Angular |
 | Interface alternativa | Vue |
 | Interface alternativa | React |
+| Conteinerização | Docker |
 
-Primeiro será construída uma combinação funcional de ponta a ponta.
-Depois serão implementadas as alternativas.
+A estratégia é primeiro construir uma combinação funcional
+de ponta a ponta.
 
-Os backends deverão seguir o mesmo contrato de API.
-As três interfaces deverão ser compatíveis com ambos.
+Depois serão implementadas as tecnologias alternativas.
 
-Funcionalidades web planejadas:
+Os backends deverão seguir um contrato compatível de API.
+
+As interfaces deverão consumir o mesmo modelo funcional.
+
+---
+
+## Funcionalidades web planejadas
+
+Entre as funcionalidades futuras estão:
 
 - Autenticação.
+- Cadastro e consulta de cobranças.
+- Cadastro e consulta de pagamentos.
 - Envio de arquivos para conciliação.
 - Histórico de execuções.
-- Consulta de resultados e totais.
+- Consulta de resultados.
+- Consulta de totais financeiros.
+- Identificação de divergências.
+- Identificação de duplicidades.
 - Download de relatórios.
 
-## Autor
+---
 
-Bruno Ramos Lopes.
+# Mainframe
+
+O código atual utiliza:
+
+```text
+GnuCOBOL
+Ubuntu
+```
+
+Ele não representa experiência prática em ambiente mainframe.
+
+Tecnologias como:
+
+```text
+z/OS
+JCL
+Db2
+CICS
+datasets
+jobs batch
+```
+
+fazem parte de uma trilha de estudo futura e não são apresentadas
+como experiência já adquirida neste projeto.
+
+---
+
+# Autor
+
+Bruno Ramos Lopes
 
 Projeto educacional e de portfólio com dados fictícios.

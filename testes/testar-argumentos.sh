@@ -9,7 +9,9 @@ trap 'rm -rf -- "$pasta_teste"' EXIT
 echo "Compilando os testes dos argumentos..."
 cobc -x -free -o "$pasta_teste/conciliacao" \
     "$raiz_projeto/conciliacao.cob" \
-    "$raiz_projeto/validar-monetario.cob"
+    "$raiz_projeto/validar-monetario.cob" \
+    "$raiz_projeto/entrada-segura.c" \
+    "$raiz_projeto/relatorio-seguro.c"
 
 aprovados=0
 reprovados=0
@@ -29,6 +31,7 @@ Resumo da conciliacao:
 Conferidos: 0
 Acima do esperado: 0
 Abaixo do esperado: 1
+Duplicados: 0
 Sem recebimento: 0
 Sem previsao: 0
 Total esperado: 100.00

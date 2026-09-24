@@ -1,27 +1,7 @@
 identification division.
 program-id. conciliacao.
 
-environment division.
-input-output section.
-file-control.
-    select arquivo-pagamentos
-        assign to dynamic caminho-arquivo
-        organization is line sequential
-        file status is status-arquivo.
-
-    select arquivo-relatorio
-        assign to dynamic caminho-relatorio
-        organization is line sequential
-        file status is status-relatorio.
-
 data division.
-file section.
-fd arquivo-pagamentos.
-01 registro-arquivo pic x(1024).
-
-fd arquivo-relatorio.
-01 registro-relatorio pic x(512).
-
 working-storage section.
 78 limite-pagamentos value 1000.
 
@@ -33,13 +13,28 @@ working-storage section.
     value "relatorio.txt".
 01 quantidade-argumentos binary-long.
 01 indice-argumento binary-long.
-01 argumento-bruto pic x(4096) value spaces.
+01 argumento-bruto pic x(256) value spaces.
+01 capacidade-argumento binary-long value 256.
+01 tamanho-argumento binary-long value zero.
 01 argumentos.
    05 caminho-argumento pic x(256) occurs 3 times.
 
 01 caminho-arquivo pic x(256) value spaces.
-01 status-arquivo pic xx value spaces.
-01 status-relatorio pic xx value spaces.
+01 status-arquivo pic 99 value zero.
+01 codigo-entrada binary-long value zero.
+01 capacidade-registro binary-long value 256.
+01 comprimento-registro binary-long value zero.
+01 tamanho-identificador binary-long value zero.
+01 posicao-separador binary-long value zero.
+01 codigo-identificador binary-long value zero.
+01 caminho-entrada-c pic x(257) value low-values.
+01 registro-arquivo pic x(256) value spaces.
+01 codigo-relatorio binary-long signed value zero.
+01 tamanho-linha-relatorio binary-long signed value zero.
+01 erro-relatorio pic x(160) value spaces.
+01 esperado-c pic x(257) value low-values.
+01 recebido-c pic x(257) value low-values.
+01 relatorio-c pic x(257) value low-values.
 01 linha-relatorio pic x(512) value spaces.
 01 fim-arquivo pic 9 value zero.
 01 numero-linha pic 9(9) value zero.
@@ -61,6 +56,7 @@ working-storage section.
 01 indice-esperado binary-long.
 01 indice-recebido binary-long.
 01 posicao-encontrada binary-long.
+01 quantidade-correspondencias binary-long value zero.
 01 diferenca pic s9(5)v99 value zero.
 01 esperado-exibicao pic zzzz9.99.
 01 recebido-exibicao pic zzzz9.99.
@@ -70,6 +66,7 @@ working-storage section.
 01 quantidade-conferidos pic 9(4) value zero.
 01 quantidade-acima pic 9(4) value zero.
 01 quantidade-abaixo pic 9(4) value zero.
+01 quantidade-duplicados pic 9(4) value zero.
 01 quantidade-sem-recebimento pic 9(4) value zero.
 01 quantidade-sem-previsao pic 9(4) value zero.
 
@@ -101,15 +98,7 @@ procedure division.
     move caminho-recebidos to caminho-arquivo
     perform carregar-arquivo
 
-    open output arquivo-relatorio
-
-    if status-relatorio not = "00"
-        display "Erro ao abrir "
-            function trim(caminho-relatorio)
-            ". Codigo: " status-relatorio
-        move 1 to return-code
-        stop run
-    end-if
+    perform preparar-relatorio
 
     move "Conferencia dos pagamentos esperados:"
         to linha-relatorio
@@ -125,12 +114,14 @@ procedure division.
     move "Conferencia concluida." to linha-relatorio
     perform gravar-linha
 
-    close arquivo-relatorio
+    call static "relatorio_confirmar" using
+        by reference erro-relatorio
+        returning codigo-relatorio
+    end-call
 
-    if status-relatorio not = "00"
-        display "Erro ao fechar "
-            function trim(caminho-relatorio)
-            ". Codigo: " status-relatorio
+    if codigo-relatorio not = zero
+        display "Erro ao publicar relatorio: "
+            function trim(erro-relatorio)
         move 1 to return-code
         stop run
     end-if
@@ -156,23 +147,31 @@ configurar-argumentos.
         until indice-argumento > 3
 
         move spaces to argumento-bruto
-        display indice-argumento upon argument-number
+        call static "entrada_argumento" using
+            indice-argumento argumento-bruto
+            capacidade-argumento tamanho-argumento
+            returning codigo-entrada
+        end-call
 
-        accept argumento-bruto from argument-value
-            on exception
-                display "Erro: nao foi possivel ler um argumento."
+        evaluate codigo-entrada
+            when 4
+                display "Erro: caminho excede 256 posicoes."
                 perform encerrar-uso
-        end-accept
+            when zero
+                continue
+            when other
+                display
+                    "Erro: argumento invalido ou nao foi possivel le-lo."
+                perform encerrar-uso
+        end-evaluate
 
-        if argumento-bruto = spaces
+        if argumento-bruto = spaces or tamanho-argumento = zero
             display "Erro: caminho vazio."
             perform encerrar-uso
         end-if
 
-        if function length(
-            function trim(argumento-bruto trailing)
-        ) > 256
-            display "Erro: caminho excede 256 posicoes."
+        if argumento-bruto(tamanho-argumento:1) = space
+            display "Erro: caminho nao deve terminar com espaco."
             perform encerrar-uso
         end-if
 
@@ -186,7 +185,8 @@ configurar-argumentos.
 
     if caminho-relatorio = caminho-esperados
         or caminho-relatorio = caminho-recebidos
-        display "Erro: relatorio deve ter caminho diferente das entradas."
+        display
+            "Erro: relatorio deve ter caminho diferente das entradas."
         perform encerrar-uso
     end-if.
 
@@ -198,22 +198,36 @@ encerrar-uso.
 carregar-arquivo.
     move zero to fim-arquivo numero-linha
 
-    open input arquivo-pagamentos
+    move low-values to caminho-entrada-c
+
+    string
+        function trim(caminho-arquivo trailing)
+        x"00"
+        delimited by size
+        into caminho-entrada-c
+    end-string
+
+    perform abrir-entrada
 
     if status-arquivo not = "00"
         display "Erro ao abrir "
             function trim(caminho-arquivo)
-            ". Codigo: " status-arquivo
+            ". Codigo: "
+            status-arquivo
+
         move 1 to return-code
         stop run
     end-if
 
     perform until fim-arquivo = 1
-        read arquivo-pagamentos
+        perform ler-entrada
 
         evaluate status-arquivo
             when "00"
+            when "04"
+            when "09"
                 add 1 to numero-linha
+
                 perform validar-registro
 
                 if mensagem-erro not = spaces
@@ -228,19 +242,24 @@ carregar-arquivo.
             when other
                 display "Erro na leitura de "
                     function trim(caminho-arquivo)
-                    ". Codigo: " status-arquivo
-                close arquivo-pagamentos
+                    ". Codigo: "
+                    status-arquivo
+
+                perform fechar-entrada
+
                 move 1 to return-code
                 stop run
         end-evaluate
     end-perform
 
-    close arquivo-pagamentos
+    perform fechar-entrada
 
     if status-arquivo not = "00"
         display "Erro ao fechar "
             function trim(caminho-arquivo)
-            ". Codigo: " status-arquivo
+            ". Codigo: "
+            status-arquivo
+
         move 1 to return-code
         stop run
     end-if
@@ -248,6 +267,7 @@ carregar-arquivo.
     if quantidade(tipo-arquivo) = zero
         display "Erro: arquivo vazio: "
             function trim(caminho-arquivo)
+
         move 1 to return-code
         stop run
     end-if.
@@ -256,13 +276,14 @@ validar-registro.
     move spaces to identificador valor-texto mensagem-erro
     move zero to quantidade-separadores
 
-    compute tamanho-registro =
-        function length(
-            function trim(registro-arquivo trailing)
-        )
+    if status-arquivo = "04"
+        move "linha excede o limite de 256 bytes."
+            to mensagem-erro
+        exit paragraph
+    end-if
 
-    if tamanho-registro > 256
-        move "linha excede o limite de 256 caracteres."
+    if status-arquivo = "09"
+        move "linha contem controle ou UTF-8 invalido."
             to mensagem-erro
         exit paragraph
     end-if
@@ -276,15 +297,30 @@ validar-registro.
         exit paragraph
     end-if
 
+    move 1 to posicao-separador
+
+    perform until
+        registro-arquivo(posicao-separador:1) = ";"
+
+        add 1 to posicao-separador
+    end-perform
+
+    compute tamanho-identificador =
+        posicao-separador - 1
+
     unstring registro-arquivo
         delimited by ";"
         into identificador valor-texto
     end-unstring
 
-    move function trim(identificador) to identificador
+    call static "entrada_identificador" using
+        identificador
+        tamanho-identificador
+        mensagem-erro
+        returning codigo-identificador
+    end-call
 
-    if identificador = spaces
-        move "identificador vazio." to mensagem-erro
+    if codigo-identificador not = zero
         exit paragraph
     end-if
 
@@ -303,28 +339,37 @@ validar-registro.
     end-call.
 
 armazenar-registro.
-    perform varying indice from 1 by 1
-        until indice > quantidade(tipo-arquivo)
+    if tipo-arquivo = 1
+        perform varying indice from 1 by 1
+            until indice > quantidade(tipo-arquivo)
 
-        if pagamento-id(tipo-arquivo, indice) = identificador
-            move "identificador duplicado neste arquivo."
-                to mensagem-erro
-            perform encerrar-com-erro
-        end-if
-    end-perform
+            if pagamento-id(tipo-arquivo, indice) =
+                identificador
+
+                move "identificador duplicado neste arquivo."
+                    to mensagem-erro
+
+                perform encerrar-com-erro
+            end-if
+        end-perform
+    end-if
 
     if quantidade(tipo-arquivo) >= limite-pagamentos
         move "arquivo excede o limite de 1000 pagamentos."
             to mensagem-erro
+
         perform encerrar-com-erro
     end-if
 
-    compute posicao-livre = quantidade(tipo-arquivo) + 1
+    compute posicao-livre =
+        quantidade(tipo-arquivo) + 1
 
     move identificador
         to pagamento-id(tipo-arquivo, posicao-livre)
+
     move valor-validado
         to pagamento-valor(tipo-arquivo, posicao-livre)
+
     move zero
         to pagamento-utilizado(tipo-arquivo, posicao-livre)
 
@@ -346,7 +391,8 @@ encerrar-com-erro.
         ": "
         function trim(mensagem-erro)
 
-    close arquivo-pagamentos
+    perform fechar-entrada
+
     move 1 to return-code
     stop run.
 
@@ -360,24 +406,32 @@ conferir-pagamentos.
             add 1 to quantidade-sem-recebimento
 
             move spaces to linha-relatorio
+
             string
                 "Pagamento: "
-                function trim(pagamento-id(1, indice-esperado))
+                function trim(
+                    pagamento-id(1, indice-esperado)
+                )
                 " | Status: sem recebimento"
                 delimited by size
                 into linha-relatorio
             end-string
+
             perform emitir-linha
         else
-            move 1 to pagamento-utilizado(
-                2, posicao-encontrada
-            )
-            perform comparar-valores
+            if quantidade-correspondencias > 1
+                add 1 to quantidade-duplicados
+                perform mostrar-duplicado
+            else
+                perform comparar-valores
+            end-if
         end-if
     end-perform.
 
 procurar-recebimento.
-    move zero to posicao-encontrada
+    move zero to
+        posicao-encontrada
+        quantidade-correspondencias
 
     perform varying indice-recebido from 1 by 1
         until indice-recebido > quantidade(2)
@@ -385,10 +439,53 @@ procurar-recebimento.
         if pagamento-id(1, indice-esperado) =
             pagamento-id(2, indice-recebido)
 
-            move indice-recebido to posicao-encontrada
-            exit perform
+            add 1 to quantidade-correspondencias
+
+            move 1 to
+                pagamento-utilizado(
+                    2,
+                    indice-recebido
+                )
+
+            if posicao-encontrada = zero
+                move indice-recebido
+                    to posicao-encontrada
+            end-if
         end-if
     end-perform.
+
+mostrar-duplicado.
+    compute diferenca =
+        pagamento-valor(2, posicao-encontrada)
+        - pagamento-valor(1, indice-esperado)
+
+    move pagamento-valor(1, indice-esperado)
+        to esperado-exibicao
+
+    move pagamento-valor(2, posicao-encontrada)
+        to recebido-exibicao
+
+    move diferenca to diferenca-exibicao
+
+    move spaces to linha-relatorio
+
+    string
+        "Pagamento: "
+        function trim(
+            pagamento-id(1, indice-esperado)
+        )
+        " | Esperado: "
+        function trim(esperado-exibicao)
+        " | Recebido: "
+        function trim(recebido-exibicao)
+        " | Diferenca: "
+        function trim(diferenca-exibicao)
+        " | Status: duplicado"
+        delimited by size
+        into linha-relatorio
+    end-string
+
+    perform emitir-linha.
 
 comparar-valores.
     compute diferenca =
@@ -399,24 +496,33 @@ comparar-valores.
         when diferenca = zero
             move "conferido" to status-pagamento
             add 1 to quantidade-conferidos
+
         when diferenca > zero
-            move "acima do esperado" to status-pagamento
+            move "acima do esperado"
+                to status-pagamento
             add 1 to quantidade-acima
+
         when other
-            move "abaixo do esperado" to status-pagamento
+            move "abaixo do esperado"
+                to status-pagamento
             add 1 to quantidade-abaixo
     end-evaluate
 
     move pagamento-valor(1, indice-esperado)
         to esperado-exibicao
+
     move pagamento-valor(2, posicao-encontrada)
         to recebido-exibicao
+
     move diferenca to diferenca-exibicao
 
     move spaces to linha-relatorio
+
     string
         "Pagamento: "
-        function trim(pagamento-id(1, indice-esperado))
+        function trim(
+            pagamento-id(1, indice-esperado)
+        )
         " | Esperado: "
         function trim(esperado-exibicao)
         " | Recebido: "
@@ -428,105 +534,299 @@ comparar-valores.
         delimited by size
         into linha-relatorio
     end-string
+
     perform emitir-linha.
 
 mostrar-sem-previsao.
     perform varying indice-recebido from 1 by 1
         until indice-recebido > quantidade(2)
 
-        if pagamento-utilizado(2, indice-recebido) = zero
+        if pagamento-utilizado(
+            2,
+            indice-recebido
+        ) = zero
+
             add 1 to quantidade-sem-previsao
 
-            move pagamento-valor(2, indice-recebido)
+            move pagamento-valor(
+                2,
+                indice-recebido
+            )
                 to recebido-exibicao
 
             move spaces to linha-relatorio
+
             string
                 "Pagamento: "
-                function trim(pagamento-id(2, indice-recebido))
+                function trim(
+                    pagamento-id(
+                        2,
+                        indice-recebido
+                    )
+                )
                 " | Recebido: "
                 function trim(recebido-exibicao)
                 " | Status: sem previsao"
                 delimited by size
                 into linha-relatorio
             end-string
+
             perform emitir-linha
         end-if
     end-perform.
 
 mostrar-resumo.
-    move "Resumo da conciliacao:" to linha-relatorio
+    move "Resumo da conciliacao:"
+        to linha-relatorio
     perform emitir-linha
 
-    move quantidade-conferidos to numero-exibicao
+    move quantidade-conferidos
+        to numero-exibicao
+
     move spaces to linha-relatorio
-    string "Conferidos: " function trim(numero-exibicao)
-        delimited by size into linha-relatorio
+
+    string
+        "Conferidos: "
+        function trim(numero-exibicao)
+        delimited by size
+        into linha-relatorio
     end-string
+
     perform emitir-linha
 
-    move quantidade-acima to numero-exibicao
+    move quantidade-acima
+        to numero-exibicao
+
     move spaces to linha-relatorio
-    string "Acima do esperado: " function trim(numero-exibicao)
-        delimited by size into linha-relatorio
+
+    string
+        "Acima do esperado: "
+        function trim(numero-exibicao)
+        delimited by size
+        into linha-relatorio
     end-string
+
     perform emitir-linha
 
-    move quantidade-abaixo to numero-exibicao
+    move quantidade-abaixo
+        to numero-exibicao
+
     move spaces to linha-relatorio
-    string "Abaixo do esperado: " function trim(numero-exibicao)
-        delimited by size into linha-relatorio
+
+    string
+        "Abaixo do esperado: "
+        function trim(numero-exibicao)
+        delimited by size
+        into linha-relatorio
     end-string
+
     perform emitir-linha
 
-    move quantidade-sem-recebimento to numero-exibicao
+    move quantidade-duplicados
+        to numero-exibicao
+
     move spaces to linha-relatorio
-    string "Sem recebimento: " function trim(numero-exibicao)
-        delimited by size into linha-relatorio
+
+    string
+        "Duplicados: "
+        function trim(numero-exibicao)
+        delimited by size
+        into linha-relatorio
     end-string
+
     perform emitir-linha
 
-    move quantidade-sem-previsao to numero-exibicao
+    move quantidade-sem-recebimento
+        to numero-exibicao
+
     move spaces to linha-relatorio
-    string "Sem previsao: " function trim(numero-exibicao)
-        delimited by size into linha-relatorio
+
+    string
+        "Sem recebimento: "
+        function trim(numero-exibicao)
+        delimited by size
+        into linha-relatorio
     end-string
+
     perform emitir-linha
 
-    move total-esperado to total-exibicao
+    move quantidade-sem-previsao
+        to numero-exibicao
+
     move spaces to linha-relatorio
-    string "Total esperado: " function trim(total-exibicao)
-        delimited by size into linha-relatorio
+
+    string
+        "Sem previsao: "
+        function trim(numero-exibicao)
+        delimited by size
+        into linha-relatorio
     end-string
+
     perform emitir-linha
 
-    move total-recebido to total-exibicao
+    move total-esperado
+        to total-exibicao
+
     move spaces to linha-relatorio
-    string "Total recebido: " function trim(total-exibicao)
-        delimited by size into linha-relatorio
+
+    string
+        "Total esperado: "
+        function trim(total-exibicao)
+        delimited by size
+        into linha-relatorio
     end-string
+
     perform emitir-linha
 
-    compute saldo-global = total-recebido - total-esperado
-    move saldo-global to saldo-exibicao
+    move total-recebido
+        to total-exibicao
+
     move spaces to linha-relatorio
-    string "Saldo global: " function trim(saldo-exibicao)
-        delimited by size into linha-relatorio
+
+    string
+        "Total recebido: "
+        function trim(total-exibicao)
+        delimited by size
+        into linha-relatorio
     end-string
+
+    perform emitir-linha
+
+    compute saldo-global =
+        total-recebido - total-esperado
+
+    move saldo-global
+        to saldo-exibicao
+
+    move spaces to linha-relatorio
+
+    string
+        "Saldo global: "
+        function trim(saldo-exibicao)
+        delimited by size
+        into linha-relatorio
+    end-string
+
     perform emitir-linha.
 
 emitir-linha.
     perform gravar-linha
-    display function trim(linha-relatorio trailing).
+
+    display function trim(
+        linha-relatorio trailing
+    ).
+
+preparar-relatorio.
+    move low-values
+        to esperado-c
+        recebido-c
+        relatorio-c
+
+    string
+        function trim(
+            caminho-esperados trailing
+        )
+        x"00"
+        delimited by size
+        into esperado-c
+    end-string
+
+    string
+        function trim(
+            caminho-recebidos trailing
+        )
+        x"00"
+        delimited by size
+        into recebido-c
+    end-string
+
+    string
+        function trim(
+            caminho-relatorio trailing
+        )
+        x"00"
+        delimited by size
+        into relatorio-c
+    end-string
+
+    call static "relatorio_abrir" using
+        by reference
+            esperado-c
+            recebido-c
+            relatorio-c
+            erro-relatorio
+        returning codigo-relatorio
+    end-call
+
+    evaluate codigo-relatorio
+        when zero
+            continue
+
+        when 2
+            display
+                "Erro: relatorio deve ter caminho diferente das entradas."
+
+            perform encerrar-uso
+
+        when other
+            display "Erro ao abrir "
+                function trim(caminho-relatorio)
+                ". Codigo: "
+                codigo-relatorio
+
+            display function trim(
+                erro-relatorio
+            )
+
+            move 1 to return-code
+            stop run
+    end-evaluate.
 
 gravar-linha.
-    write registro-relatorio from linha-relatorio
+    compute tamanho-linha-relatorio =
+        function length(
+            function trim(
+                linha-relatorio trailing
+            )
+        )
 
-    if status-relatorio not = "00"
-        display "Erro ao gravar "
-            function trim(caminho-relatorio)
-            ". Codigo: " status-relatorio
-        close arquivo-relatorio
+    call static "relatorio_linha" using
+        by reference
+            linha-relatorio
+            tamanho-linha-relatorio
+            erro-relatorio
+        returning codigo-relatorio
+    end-call
+
+    if codigo-relatorio not = zero
+        display "Erro ao gravar relatorio: "
+            function trim(erro-relatorio)
+
         move 1 to return-code
         stop run
     end-if.
+
+abrir-entrada.
+    call static "entrada_abrir" using
+        caminho-entrada-c
+        returning codigo-entrada
+    end-call
+
+    move codigo-entrada to status-arquivo.
+
+ler-entrada.
+    call static "entrada_ler" using
+        registro-arquivo
+        capacidade-registro
+        comprimento-registro
+        returning codigo-entrada
+    end-call
+
+    move codigo-entrada to status-arquivo.
+
+fechar-entrada.
+    call static "entrada_fechar"
+        returning codigo-entrada
+    end-call
+
+    move codigo-entrada to status-arquivo.

@@ -1,4 +1,6 @@
-CREATE VIEW vw_conciliacao_completa AS
+BEGIN;
+
+CREATE OR REPLACE VIEW vw_conciliacao_completa AS
 WITH pagamentos_analisados AS (
     SELECT
         id,
@@ -41,8 +43,7 @@ LEFT JOIN cobrancas c
 WHERE c.id IS NULL
   AND p.numero = 1;
 
-
-CREATE VIEW vw_resumo_financeiro AS
+CREATE OR REPLACE VIEW vw_resumo_financeiro AS
 WITH pagamentos_numerados AS (
     SELECT
         id,
@@ -53,6 +54,15 @@ WITH pagamentos_numerados AS (
             ORDER BY id
         ) AS numero
     FROM pagamentos
+),
+cobrancas_analisadas AS (
+    SELECT
+        c.valor_esperado,
+        COALESCE(p.valor_pago, 0) AS valor_principal
+    FROM cobrancas c
+    LEFT JOIN pagamentos_numerados p
+        ON c.identificador = p.identificador_cobranca
+        AND p.numero = 1
 ),
 metricas AS (
     SELECT
@@ -68,18 +78,26 @@ metricas AS (
              ON p.identificador_cobranca = c.identificador
          WHERE p.numero > 1) AS total_duplicado,
 
+        -- Todos os pagamentos sem cobrança entram nesta categoria.
         (SELECT COALESCE(SUM(p.valor_pago), 0)
          FROM pagamentos_numerados p
          LEFT JOIN cobrancas c
              ON p.identificador_cobranca = c.identificador
-         WHERE c.id IS NULL
-           AND p.numero = 1) AS total_cobranca_inexistente,
+         WHERE c.id IS NULL) AS total_cobranca_inexistente,
 
-        (SELECT COALESCE(SUM(p.valor_pago), 0)
-         FROM pagamentos_numerados p
-         JOIN cobrancas c
-             ON p.identificador_cobranca = c.identificador
-         WHERE p.numero = 1) AS total_pago_valido
+        -- Mantém o nome existente: primeiro pagamento por cobrança.
+        (SELECT COALESCE(SUM(valor_principal), 0)
+         FROM cobrancas_analisadas) AS total_pago_valido,
+
+        (SELECT COALESCE(SUM(
+             GREATEST(valor_esperado - valor_principal, 0)
+         ), 0)
+         FROM cobrancas_analisadas) AS valor_pendente,
+
+        (SELECT COALESCE(SUM(
+             GREATEST(valor_principal - valor_esperado, 0)
+         ), 0)
+         FROM cobrancas_analisadas) AS valor_excedente
 )
 SELECT
     total_esperado,
@@ -87,5 +105,9 @@ SELECT
     total_duplicado,
     total_cobranca_inexistente,
     total_pago_valido,
-    total_esperado - total_pago_valido AS valor_pendente
+    valor_pendente,
+    valor_excedente,
+    total_pago_valido - total_esperado AS saldo_liquido
 FROM metricas;
+
+COMMIT;
