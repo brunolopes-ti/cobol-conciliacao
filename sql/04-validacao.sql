@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 
 -- Execute somente no banco conciliacao_teste.
--- Os dados são substituídos dentro de uma transação.
+-- Os dados sao substituidos dentro de uma transacao.
 -- O ROLLBACK final restaura os dados anteriores.
 
 BEGIN;
@@ -53,7 +53,8 @@ BEGIN
         RAISE EXCEPTION 'FALHOU: cinco classificacoes.';
     END IF;
 
-    SELECT * INTO STRICT r FROM vw_resumo_financeiro;
+    SELECT * INTO STRICT r
+    FROM vw_resumo_financeiro;
 
     IF ROW(
         r.total_esperado,
@@ -65,25 +66,82 @@ BEGIN
         r.valor_excedente,
         r.saldo_liquido
     ) IS DISTINCT FROM ROW(
-        465.75::numeric, 506.25::numeric, 100.50::numeric,
-        50.00::numeric, 355.75::numeric, 110.00::numeric,
-        0::numeric, -110.00::numeric
+        465.75::numeric,
+        506.25::numeric,
+        100.50::numeric,
+        50.00::numeric,
+        355.75::numeric,
+        110.00::numeric,
+        0::numeric,
+        -110.00::numeric
     ) THEN
         RAISE EXCEPTION 'FALHOU: totais do cenario original.';
     END IF;
 
-    RAISE NOTICE 'PASSOU: cinco classificacoes e totais originais.';
+    RAISE NOTICE
+        'PASSOU: cinco classificacoes e totais originais.';
 END;
 $$;
 
+
+-- Segundo pagamento para um identificador que nao possui cobranca.
+-- Cada pagamento deve continuar aparecendo individualmente como
+-- COBRANCA INEXISTENTE, seguindo a mesma semantica de SEM_PREVISAO
+-- usada pelo COBOL.
 INSERT INTO pagamentos (identificador_cobranca, valor_pago)
 VALUES ('COB999', 30.00);
 
 DO $$
 DECLARE
     r RECORD;
+    valores_sem_cobranca numeric[];
 BEGIN
-    SELECT * INTO STRICT r FROM vw_resumo_financeiro;
+    IF (SELECT COUNT(*) FROM vw_conciliacao_completa) <> 6 THEN
+        RAISE EXCEPTION
+            'FALHOU: quantidade de linhas apos pagamento repetido sem cobranca.';
+    END IF;
+
+    IF (
+        SELECT COUNT(*)
+        FROM vw_conciliacao_completa
+        WHERE identificador = 'COB999'
+          AND status = 'COBRANCA INEXISTENTE'
+    ) <> 2 THEN
+        RAISE EXCEPTION
+            'FALHOU: cada pagamento sem cobranca deve gerar uma linha.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM vw_conciliacao_completa
+        WHERE identificador = 'COB999'
+          AND status <> 'COBRANCA INEXISTENTE'
+    ) THEN
+        RAISE EXCEPTION
+            'FALHOU: pagamento sem cobranca recebeu classificacao incorreta.';
+    END IF;
+
+    SELECT ARRAY_AGG(
+        valor_pago
+        ORDER BY valor_pago
+    )
+    INTO valores_sem_cobranca
+    FROM vw_conciliacao_completa
+    WHERE identificador = 'COB999'
+      AND status = 'COBRANCA INEXISTENTE';
+
+    IF valores_sem_cobranca IS DISTINCT FROM
+       ARRAY[
+           30.00::numeric,
+           50.00::numeric
+       ]
+    THEN
+        RAISE EXCEPTION
+            'FALHOU: valores dos pagamentos sem cobranca.';
+    END IF;
+
+    SELECT * INTO STRICT r
+    FROM vw_resumo_financeiro;
 
     IF r.total_recebido_bruto IS DISTINCT FROM 536.25::numeric
        OR r.total_cobranca_inexistente IS DISTINCT FROM 80::numeric
@@ -93,37 +151,47 @@ BEGIN
            + r.total_cobranca_inexistente
        )
     THEN
-        RAISE EXCEPTION 'FALHOU: pagamentos repetidos sem cobranca.';
+        RAISE EXCEPTION
+            'FALHOU: totais de pagamentos repetidos sem cobranca.';
     END IF;
 
-    RAISE NOTICE 'PASSOU: pagamentos repetidos sem cobranca.';
+    RAISE NOTICE
+        'PASSOU: pagamentos repetidos sem cobranca aparecem individualmente.';
 END;
 $$;
+
 
 TRUNCATE TABLE pagamentos, cobrancas RESTART IDENTITY;
 
 INSERT INTO cobrancas (identificador, valor_esperado)
-VALUES ('A', 100), ('B', 100);
+VALUES
+('A', 100),
+('B', 100);
 
 INSERT INTO pagamentos (identificador_cobranca, valor_pago)
-VALUES ('A', 200);
+VALUES
+('A', 200);
 
 DO $$
 DECLARE
     r RECORD;
 BEGIN
-    SELECT * INTO STRICT r FROM vw_resumo_financeiro;
+    SELECT * INTO STRICT r
+    FROM vw_resumo_financeiro;
 
     IF r.valor_pendente IS DISTINCT FROM 100::numeric
        OR r.valor_excedente IS DISTINCT FROM 100::numeric
        OR r.saldo_liquido IS DISTINCT FROM 0::numeric
     THEN
-        RAISE EXCEPTION 'FALHOU: excedente esconde pendencia.';
+        RAISE EXCEPTION
+            'FALHOU: excedente esconde pendencia.';
     END IF;
 
-    RAISE NOTICE 'PASSOU: excedente nao esconde pendencia.';
+    RAISE NOTICE
+        'PASSOU: excedente nao esconde pendencia.';
 END;
 $$;
+
 
 TRUNCATE TABLE pagamentos, cobrancas RESTART IDENTITY;
 
@@ -131,26 +199,35 @@ INSERT INTO cobrancas (identificador, valor_esperado)
 VALUES ('A', 100);
 
 INSERT INTO pagamentos (identificador_cobranca, valor_pago)
-VALUES ('A', 20), ('A', 100);
+VALUES
+('A', 20),
+('A', 100);
 
 DO $$
 DECLARE
     r RECORD;
 BEGIN
-    SELECT * INTO STRICT r FROM vw_resumo_financeiro;
+    SELECT * INTO STRICT r
+    FROM vw_resumo_financeiro;
 
     IF r.total_pago_valido IS DISTINCT FROM 20::numeric
        OR r.total_duplicado IS DISTINCT FROM 100::numeric
        OR r.valor_pendente IS DISTINCT FROM 80::numeric
-       OR (SELECT status FROM vw_conciliacao_completa
-           WHERE identificador = 'A') IS DISTINCT FROM 'DUPLICADO'
+       OR (
+           SELECT status
+           FROM vw_conciliacao_completa
+           WHERE identificador = 'A'
+       ) IS DISTINCT FROM 'DUPLICADO'
     THEN
-        RAISE EXCEPTION 'FALHOU: primeiro pagamento por identificador.';
+        RAISE EXCEPTION
+            'FALHOU: primeiro pagamento por identificador.';
     END IF;
 
-    RAISE NOTICE 'PASSOU: primeiro pagamento por identificador.';
+    RAISE NOTICE
+        'PASSOU: primeiro pagamento por identificador.';
 END;
 $$;
+
 
 TRUNCATE TABLE pagamentos, cobrancas RESTART IDENTITY;
 
@@ -158,9 +235,13 @@ DO $$
 DECLARE
     r RECORD;
 BEGIN
-    SELECT * INTO STRICT r FROM vw_resumo_financeiro;
+    SELECT * INTO STRICT r
+    FROM vw_resumo_financeiro;
 
-    IF EXISTS (SELECT 1 FROM vw_conciliacao_completa)
+    IF EXISTS (
+        SELECT 1
+        FROM vw_conciliacao_completa
+    )
        OR ROW(
            r.total_esperado,
            r.total_recebido_bruto,
@@ -171,14 +252,22 @@ BEGIN
            r.valor_excedente,
            r.saldo_liquido
        ) IS DISTINCT FROM ROW(
-           0::numeric, 0::numeric, 0::numeric, 0::numeric,
-           0::numeric, 0::numeric, 0::numeric, 0::numeric
+           0::numeric,
+           0::numeric,
+           0::numeric,
+           0::numeric,
+           0::numeric,
+           0::numeric,
+           0::numeric,
+           0::numeric
        )
     THEN
-        RAISE EXCEPTION 'FALHOU: banco vazio.';
+        RAISE EXCEPTION
+            'FALHOU: banco vazio.';
     END IF;
 
-    RAISE NOTICE 'PASSOU: banco vazio.';
+    RAISE NOTICE
+        'PASSOU: banco vazio.';
 END;
 $$;
 

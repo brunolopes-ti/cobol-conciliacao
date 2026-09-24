@@ -11,13 +11,15 @@ working-storage section.
     value "dados/recebidos.csv".
 01 caminho-relatorio pic x(256)
     value "relatorio.txt".
+01 caminho-resultado pic x(256)
+    value "resultado.tsv".
 01 quantidade-argumentos binary-long.
 01 indice-argumento binary-long.
 01 argumento-bruto pic x(256) value spaces.
 01 capacidade-argumento binary-long value 256.
 01 tamanho-argumento binary-long value zero.
 01 argumentos.
-   05 caminho-argumento pic x(256) occurs 3 times.
+   05 caminho-argumento pic x(256) occurs 4 times.
 
 01 caminho-arquivo pic x(256) value spaces.
 01 status-arquivo pic 99 value zero.
@@ -32,10 +34,16 @@ working-storage section.
 01 codigo-relatorio binary-long signed value zero.
 01 tamanho-linha-relatorio binary-long signed value zero.
 01 erro-relatorio pic x(160) value spaces.
+01 codigo-resultado binary-long signed value zero.
+01 tamanho-linha-resultado binary-long signed value zero.
+01 erro-resultado pic x(160) value spaces.
 01 esperado-c pic x(257) value low-values.
 01 recebido-c pic x(257) value low-values.
 01 relatorio-c pic x(257) value low-values.
+01 resultado-c pic x(257) value low-values.
 01 linha-relatorio pic x(512) value spaces.
+01 linha-resultado pic x(512) value spaces.
+01 tabulacao pic x value x"09".
 01 fim-arquivo pic 9 value zero.
 01 numero-linha pic 9(9) value zero.
 01 numero-exibicao pic z(8)9.
@@ -62,6 +70,20 @@ working-storage section.
 01 recebido-exibicao pic zzzz9.99.
 01 diferenca-exibicao pic +++++9.99.
 01 status-pagamento pic x(30) value spaces.
+01 status-resultado pic x(30) value spaces.
+01 esperado-resultado pic z(7)9.99.
+01 recebido-resultado pic z(7)9.99.
+01 diferenca-resultado pic -(7)9.99.
+01 total-esperado-resultado pic z(7)9.99.
+01 total-recebido-resultado pic z(7)9.99.
+01 saldo-resultado pic -(8)9.99.
+01 quantidade-detalhe-resultado pic z(8)9.
+01 conferidos-resultado pic z(8)9.
+01 acima-resultado pic z(8)9.
+01 abaixo-resultado pic z(8)9.
+01 duplicados-resultado pic z(8)9.
+01 sem-recebimento-resultado pic z(8)9.
+01 sem-previsao-resultado pic z(8)9.
 
 01 quantidade-conferidos pic 9(4) value zero.
 01 quantidade-acima pic 9(4) value zero.
@@ -99,6 +121,17 @@ procedure division.
     perform carregar-arquivo
 
     perform preparar-relatorio
+    perform preparar-resultado
+
+    move spaces to linha-resultado
+    string
+        "VERSAO"
+        tabulacao
+        "1"
+        delimited by size
+        into linha-resultado
+    end-string
+    perform gravar-linha-resultado
 
     move "Conferencia dos pagamentos esperados:"
         to linha-relatorio
@@ -114,13 +147,13 @@ procedure division.
     move "Conferencia concluida." to linha-relatorio
     perform gravar-linha
 
-    call static "relatorio_confirmar" using
+    call static "saidas_confirmar" using
         by reference erro-relatorio
         returning codigo-relatorio
     end-call
 
     if codigo-relatorio not = zero
-        display "Erro ao publicar relatorio: "
+        display "Erro ao publicar saidas: "
             function trim(erro-relatorio)
         move 1 to return-code
         stop run
@@ -138,18 +171,21 @@ configurar-argumentos.
         exit paragraph
     end-if
 
-    if quantidade-argumentos not = 3
-        display "Erro: informe zero ou tres argumentos."
+    if quantidade-argumentos not = 4
+        display "Erro: informe zero ou quatro argumentos."
         perform encerrar-uso
     end-if
 
     perform varying indice-argumento from 1 by 1
-        until indice-argumento > 3
+        until indice-argumento > 4
 
         move spaces to argumento-bruto
+
         call static "entrada_argumento" using
-            indice-argumento argumento-bruto
-            capacidade-argumento tamanho-argumento
+            indice-argumento
+            argumento-bruto
+            capacidade-argumento
+            tamanho-argumento
             returning codigo-entrada
         end-call
 
@@ -157,15 +193,18 @@ configurar-argumentos.
             when 4
                 display "Erro: caminho excede 256 posicoes."
                 perform encerrar-uso
+
             when zero
                 continue
+
             when other
                 display
                     "Erro: argumento invalido ou nao foi possivel le-lo."
                 perform encerrar-uso
         end-evaluate
 
-        if argumento-bruto = spaces or tamanho-argumento = zero
+        if argumento-bruto = spaces
+            or tamanho-argumento = zero
             display "Erro: caminho vazio."
             perform encerrar-uso
         end-if
@@ -182,16 +221,26 @@ configurar-argumentos.
     move caminho-argumento(1) to caminho-esperados
     move caminho-argumento(2) to caminho-recebidos
     move caminho-argumento(3) to caminho-relatorio
+    move caminho-argumento(4) to caminho-resultado
 
     if caminho-relatorio = caminho-esperados
         or caminho-relatorio = caminho-recebidos
         display
             "Erro: relatorio deve ter caminho diferente das entradas."
         perform encerrar-uso
+    end-if
+
+    if caminho-resultado = caminho-esperados
+        or caminho-resultado = caminho-recebidos
+        or caminho-resultado = caminho-relatorio
+        display
+            "Erro: resultado deve ter caminho diferente dos demais arquivos."
+        perform encerrar-uso
     end-if.
 
 encerrar-uso.
-    display "Uso: ./conciliacao [esperados recebidos relatorio]"
+    display
+        "Uso: ./conciliacao [esperados recebidos relatorio resultado]"
     move 2 to return-code
     stop run.
 
@@ -418,6 +467,7 @@ conferir-pagamentos.
             end-string
 
             perform emitir-linha
+            perform gravar-detalhe-sem-recebimento
         else
             if quantidade-correspondencias > 1
                 add 1 to quantidade-duplicados
@@ -485,7 +535,8 @@ mostrar-duplicado.
         into linha-relatorio
     end-string
 
-    perform emitir-linha.
+    perform emitir-linha
+    perform gravar-detalhe-duplicado.
 
 comparar-valores.
     compute diferenca =
@@ -535,7 +586,8 @@ comparar-valores.
         into linha-relatorio
     end-string
 
-    perform emitir-linha.
+    perform emitir-linha
+    perform gravar-detalhe-comparado.
 
 mostrar-sem-previsao.
     perform varying indice-recebido from 1 by 1
@@ -572,6 +624,7 @@ mostrar-sem-previsao.
             end-string
 
             perform emitir-linha
+            perform gravar-detalhe-sem-previsao
         end-if
     end-perform.
 
@@ -707,7 +760,206 @@ mostrar-resumo.
         into linha-relatorio
     end-string
 
-    perform emitir-linha.
+    perform emitir-linha
+    perform gravar-resumo-resultado.
+
+gravar-detalhe-sem-recebimento.
+    move pagamento-valor(1, indice-esperado)
+        to esperado-resultado
+
+    move zero to quantidade-detalhe-resultado
+
+    move spaces to linha-resultado
+
+    string
+        "DETALHE"
+        tabulacao
+        function trim(
+            pagamento-id(1, indice-esperado)
+        )
+        tabulacao
+        function trim(esperado-resultado)
+        tabulacao
+        tabulacao
+        tabulacao
+        "SEM_RECEBIMENTO"
+        tabulacao
+        function trim(quantidade-detalhe-resultado)
+        delimited by size
+        into linha-resultado
+    end-string
+
+    perform gravar-linha-resultado.
+
+gravar-detalhe-duplicado.
+    move pagamento-valor(1, indice-esperado)
+        to esperado-resultado
+
+    move pagamento-valor(2, posicao-encontrada)
+        to recebido-resultado
+
+    move diferenca
+        to diferenca-resultado
+
+    move quantidade-correspondencias
+        to quantidade-detalhe-resultado
+
+    move spaces to linha-resultado
+
+    string
+        "DETALHE"
+        tabulacao
+        function trim(
+            pagamento-id(1, indice-esperado)
+        )
+        tabulacao
+        function trim(esperado-resultado)
+        tabulacao
+        function trim(recebido-resultado)
+        tabulacao
+        function trim(diferenca-resultado)
+        tabulacao
+        "DUPLICADO"
+        tabulacao
+        function trim(quantidade-detalhe-resultado)
+        delimited by size
+        into linha-resultado
+    end-string
+
+    perform gravar-linha-resultado.
+
+gravar-detalhe-comparado.
+    evaluate true
+        when diferenca = zero
+            move "CONFERIDO" to status-resultado
+
+        when diferenca > zero
+            move "ACIMA_DO_ESPERADO"
+                to status-resultado
+
+        when other
+            move "ABAIXO_DO_ESPERADO"
+                to status-resultado
+    end-evaluate
+
+    move pagamento-valor(1, indice-esperado)
+        to esperado-resultado
+
+    move pagamento-valor(2, posicao-encontrada)
+        to recebido-resultado
+
+    move diferenca
+        to diferenca-resultado
+
+    move 1 to quantidade-detalhe-resultado
+
+    move spaces to linha-resultado
+
+    string
+        "DETALHE"
+        tabulacao
+        function trim(
+            pagamento-id(1, indice-esperado)
+        )
+        tabulacao
+        function trim(esperado-resultado)
+        tabulacao
+        function trim(recebido-resultado)
+        tabulacao
+        function trim(diferenca-resultado)
+        tabulacao
+        function trim(status-resultado)
+        tabulacao
+        function trim(quantidade-detalhe-resultado)
+        delimited by size
+        into linha-resultado
+    end-string
+
+    perform gravar-linha-resultado.
+
+gravar-detalhe-sem-previsao.
+    move pagamento-valor(2, indice-recebido)
+        to recebido-resultado
+
+    move 1 to quantidade-detalhe-resultado
+
+    move spaces to linha-resultado
+
+    string
+        "DETALHE"
+        tabulacao
+        function trim(
+            pagamento-id(2, indice-recebido)
+        )
+        tabulacao
+        tabulacao
+        function trim(recebido-resultado)
+        tabulacao
+        tabulacao
+        "SEM_PREVISAO"
+        tabulacao
+        function trim(quantidade-detalhe-resultado)
+        delimited by size
+        into linha-resultado
+    end-string
+
+    perform gravar-linha-resultado.
+
+gravar-resumo-resultado.
+    move quantidade-conferidos
+        to conferidos-resultado
+
+    move quantidade-acima
+        to acima-resultado
+
+    move quantidade-abaixo
+        to abaixo-resultado
+
+    move quantidade-duplicados
+        to duplicados-resultado
+
+    move quantidade-sem-recebimento
+        to sem-recebimento-resultado
+
+    move quantidade-sem-previsao
+        to sem-previsao-resultado
+
+    move total-esperado
+        to total-esperado-resultado
+
+    move total-recebido
+        to total-recebido-resultado
+
+    move saldo-global
+        to saldo-resultado
+
+    move spaces to linha-resultado
+
+    string
+        "RESUMO"
+        tabulacao
+        function trim(conferidos-resultado)
+        tabulacao
+        function trim(acima-resultado)
+        tabulacao
+        function trim(abaixo-resultado)
+        tabulacao
+        function trim(duplicados-resultado)
+        tabulacao
+        function trim(sem-recebimento-resultado)
+        tabulacao
+        function trim(sem-previsao-resultado)
+        tabulacao
+        function trim(total-esperado-resultado)
+        tabulacao
+        function trim(total-recebido-resultado)
+        tabulacao
+        function trim(saldo-resultado)
+        delimited by size
+        into linha-resultado
+    end-string
+
+    perform gravar-linha-resultado.
 
 emitir-linha.
     perform gravar-linha
@@ -782,6 +1034,52 @@ preparar-relatorio.
             stop run
     end-evaluate.
 
+preparar-resultado.
+    move low-values to resultado-c
+
+    string
+        function trim(
+            caminho-resultado trailing
+        )
+        x"00"
+        delimited by size
+        into resultado-c
+    end-string
+
+    call static "resultado_abrir" using
+        by reference
+            esperado-c
+            recebido-c
+            relatorio-c
+            resultado-c
+            erro-resultado
+        returning codigo-resultado
+    end-call
+
+    evaluate codigo-resultado
+        when zero
+            continue
+
+        when 2
+            display
+                "Erro: resultado deve ter caminho diferente dos demais arquivos."
+
+            perform encerrar-uso
+
+        when other
+            display "Erro ao abrir "
+                function trim(caminho-resultado)
+                ". Codigo: "
+                codigo-resultado
+
+            display function trim(
+                erro-resultado
+            )
+
+            move 1 to return-code
+            stop run
+    end-evaluate.
+
 gravar-linha.
     compute tamanho-linha-relatorio =
         function length(
@@ -801,6 +1099,30 @@ gravar-linha.
     if codigo-relatorio not = zero
         display "Erro ao gravar relatorio: "
             function trim(erro-relatorio)
+
+        move 1 to return-code
+        stop run
+    end-if.
+
+gravar-linha-resultado.
+    compute tamanho-linha-resultado =
+        function length(
+            function trim(
+                linha-resultado trailing
+            )
+        )
+
+    call static "resultado_linha" using
+        by reference
+            linha-resultado
+            tamanho-linha-resultado
+            erro-resultado
+        returning codigo-resultado
+    end-call
+
+    if codigo-resultado not = zero
+        display "Erro ao gravar resultado: "
+            function trim(erro-resultado)
 
         move 1 to return-code
         stop run

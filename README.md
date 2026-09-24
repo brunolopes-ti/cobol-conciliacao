@@ -19,10 +19,10 @@ Os dados utilizados são fictícios.
 | Validação monetária compartilhada | Implementada |
 | Conciliação entre dois arquivos | Implementada |
 | Tratamento de pagamentos recebidos duplicados | Implementado |
-| Resumo financeiro e relatório TXT | Implementados |
+| Resumo financeiro, relatório TXT e resultado TSV v1 | Implementados |
 | Caminhos por argumentos de terminal | Implementados |
 | Proteções adicionais de entrada e relatório | Implementadas |
-| Testes automatizados COBOL | 7 suítes aprovadas |
+| Testes automatizados COBOL | 9 suítes aprovadas |
 | Estrutura, views e restrições PostgreSQL | Implementadas e validadas |
 | Integração direta entre banco e COBOL | Pendente |
 | Backend Java | Planejado |
@@ -54,7 +54,7 @@ fortalecer operações que dependem do sistema operacional.
 | Arquivo | Responsabilidade |
 |---|---|
 | `entrada-segura.c` | Apoio à leitura segura de argumentos, arquivos e identificadores |
-| `relatorio-seguro.c` | Apoio à geração e publicação segura do relatório |
+| `relatorio-seguro.c` | Geração temporária e publicação coordenada de TXT e TSV |
 
 ---
 
@@ -395,23 +395,25 @@ Sem argumentos, são utilizados:
 | Valores esperados | `dados/esperados.csv` |
 | Valores recebidos | `dados/recebidos.csv` |
 | Relatório | `relatorio.txt` |
+| Resultado estruturado | `resultado.tsv` |
 
-Também é possível informar os três caminhos:
+Também é possível informar os quatro caminhos:
 
 ```bash
 ./conciliacao \
     "dados/esperados.csv" \
     "dados/recebidos.csv" \
-    "relatorio.txt"
+    "relatorio.txt" \
+    "resultado.tsv"
 ```
 
 A ordem é:
 
 ```text
-esperados recebidos relatorio
+esperados recebidos relatorio resultado
 ```
 
-São aceitos zero ou três argumentos.
+São aceitos zero ou quatro argumentos.
 
 Caminhos contendo espaços devem ser colocados entre aspas.
 
@@ -463,6 +465,45 @@ Conferencia concluida.
 
 ---
 
+## Resultado estruturado
+
+O arquivo `resultado.tsv` usa UTF-8 sem BOM, TAB entre campos e LF entre
+linhas. O formato versão 1 possui:
+
+- `VERSAO`: 2 campos, com versão `1`.
+- `DETALHE`: 7 campos (tipo, identificador, esperado, recebido, diferença,
+  status e quantidade de recebimentos).
+- `RESUMO`: 10 campos; é obrigatoriamente a última linha.
+
+Cobranças com vários pagamentos usam o primeiro como principal e
+classificam o detalhe como `DUPLICADO`. Cada pagamento sem cobrança gera
+seu próprio `SEM_PREVISAO`, inclusive quando o identificador se repete.
+Campos monetários não aplicáveis ficam vazios.
+
+O contrato completo está em [docs/contrato-integracao.md](docs/contrato-integracao.md).
+O backend Java ainda não foi implementado.
+
+## Publicação das saídas
+
+As duas saídas são gravadas em temporários, sincronizadas e fechadas
+antes de qualquer publicação. Caminhos equivalentes para o mesmo destino
+são rejeitados mesmo quando o arquivo ainda não existe.
+
+A publicação é coordenada: uma reserva do relatório anterior permite
+restaurá-lo se a publicação do TSV falhar. Se não havia relatório, o novo
+é removido nessa recuperação. O TSV anterior permanece intacto.
+
+Isso não constitui uma troca atômica do par: os arquivos são substituídos
+em sequência. Queda de energia, encerramento forçado e alterações
+concorrentes não têm recuperação automática garantida. O backend deve
+usar uma pasta exclusiva por execução e consumir as saídas somente após
+o processo terminar com código 0 e a validação do TSV ser aprovada.
+
+Se a própria recuperação falhar, o programa retorna 1 e informa o nome
+da reserva `.conciliacao-*.bak`, mantida na pasta do relatório para
+recuperação manual. Nenhum sucesso é anunciado. Uma falha na limpeza da
+reserva após publicar ambas as saídas também retorna 1.
+
 ## Relatório e códigos de saída
 
 Os arquivos de entrada são validados antes da publicação
@@ -494,6 +535,8 @@ echo $?
 
 # Testes automatizados
 
+As suítes usam Bash, GnuCOBOL, GCC e Python 3 no Ubuntu.
+
 Execute todas as suítes com:
 
 ```bash
@@ -507,7 +550,7 @@ das suítes.
 
 ## Suítes atuais
 
-O projeto possui sete suítes automatizadas:
+O projeto possui nove suítes automatizadas:
 
 | Suíte | Finalidade |
 |---|---|
@@ -515,6 +558,8 @@ O projeto possui sete suítes automatizadas:
 | Conferência interativa | Entrada e cálculo interativo |
 | Conciliação | Regras de comparação entre arquivos |
 | Relatório | Conteúdo e comportamento do relatório |
+| Resultado estruturado | Contrato TSV, detalhes e resumo |
+| Publicação das saídas | Colisões, falhas e recuperação do par TXT/TSV |
 | Argumentos | Caminhos e argumentos de terminal |
 | Limites das entradas | Limites e entradas inválidas |
 | Proteção de arquivos | Segurança dos arquivos de entrada e saída |
@@ -522,7 +567,7 @@ O projeto possui sete suítes automatizadas:
 Resultado confirmado localmente:
 
 ```text
-Suites aprovadas: 7
+Suites aprovadas: 9
 Suites reprovadas: 0
 VERIFICACAO COMPLETA: PASSOU
 ```
@@ -779,6 +824,8 @@ Essa integração será realizada por uma camada de backend.
 | `testes/testar-argumentos.sh` | Suíte dos argumentos |
 | `testes/testar-limites.sh` | Suíte de limites das entradas |
 | `testes/testar-protecao-arquivos.sh` | Suíte de proteção dos arquivos |
+| `testes/testar-resultado.sh` | Suíte do contrato TSV |
+| `testes/testar-publicacao-saidas.sh` | Suíte da publicação coordenada |
 | `testes/testar-tudo.sh` | Execução conjunta das suítes |
 | `sql/01-estrutura.sql` | Estrutura PostgreSQL |
 | `sql/02-dados-teste.sql` | Massa de teste SQL |
@@ -807,7 +854,7 @@ As principais limitações atuais são:
 - A comparação de identificadores diferencia maiúsculas e minúsculas.
 - Não existe parser CSV completo com suporte a campos complexos entre aspas.
 - A política de considerar o primeiro recebimento como principal é uma regra didática.
-- Os resultados do motor COBOL ainda são predominantemente textuais.
+- O motor gera TXT para leitura humana e TSV v1 para integração; o consumidor Java ainda está pendente.
 - COBOL e PostgreSQL ainda não estão conectados diretamente.
 - Não existe API.
 - Não existe interface web.

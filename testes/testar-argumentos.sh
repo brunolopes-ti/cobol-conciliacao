@@ -19,6 +19,7 @@ reprovados=0
 esperados="$pasta_teste/valores esperados.csv"
 recebidos="$pasta_teste/valores recebidos.csv"
 relatorio="$pasta_teste/resultado final.txt"
+resultado="$pasta_teste/resultado estruturado.tsv"
 
 printf 'P001;100.00\n' > "$esperados"
 printf 'P001;80.00\n' > "$recebidos"
@@ -99,25 +100,37 @@ verificar_cenario \
     "caminhos personalizados com espacos" \
     0 \
     "Conferencia concluida." \
-    "$esperados" "$recebidos" "$relatorio"
+    "$esperados" "$recebidos" "$relatorio" "$resultado"
 
 verificar_cenario \
     "quantidade incorreta de argumentos" \
     2 \
-    "Erro: informe zero ou tres argumentos." \
+    "Erro: informe zero ou quatro argumentos." \
     "$esperados"
 
 verificar_cenario \
     "caminho vazio" \
     2 \
     "Erro: caminho vazio." \
-    "" "$recebidos" "$relatorio"
+    "" "$recebidos" "$relatorio" "$resultado"
 
 verificar_cenario \
     "relatorio igual ao caminho de entrada" \
     2 \
     "Erro: relatorio deve ter caminho diferente das entradas." \
-    "$esperados" "$recebidos" "$esperados"
+    "$esperados" "$recebidos" "$esperados" "$resultado"
+
+verificar_cenario \
+    "resultado igual ao caminho de entrada" \
+    2 \
+    "Erro: resultado deve ter caminho diferente dos demais arquivos." \
+    "$esperados" "$recebidos" "$relatorio" "$esperados"
+
+verificar_cenario \
+    "resultado igual ao relatorio" \
+    2 \
+    "Erro: resultado deve ter caminho diferente dos demais arquivos." \
+    "$esperados" "$recebidos" "$relatorio" "$relatorio"
 
 printf -v caminho_longo '%0257d' 0
 
@@ -125,13 +138,13 @@ verificar_cenario \
     "caminho acima do limite" \
     2 \
     "Erro: caminho excede 256 posicoes." \
-    "$caminho_longo" "$recebidos" "$relatorio"
+    "$caminho_longo" "$recebidos" "$relatorio" "$resultado"
 
 verificar_cenario \
     "entrada personalizada inexistente" \
     1 \
     "Erro ao abrir inexistente.csv. Codigo: 35" \
-    "inexistente.csv" "$recebidos" "$relatorio"
+    "inexistente.csv" "$recebidos" "$relatorio" "$resultado"
 
 echo
 echo "Resumo: $aprovados aprovados, $reprovados reprovados."
