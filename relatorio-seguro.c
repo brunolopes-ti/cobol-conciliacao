@@ -41,7 +41,9 @@ typedef struct {
 
     char protegidos[MAX_PROTEGIDOS][CAMINHO_TAMANHO];
     struct stat protegidos_originais[MAX_PROTEGIDOS];
+    int protegido_original_valido[MAX_PROTEGIDOS];
     int quantidade_protegidos;
+    int quantidade_protegidos_obrigatorios;
 } saida_segura;
 
 static saida_segura contextos[QUANTIDADE_CONTEXTOS] = {
@@ -92,6 +94,7 @@ static void limpar_contexto(saida_segura *contexto)
     contexto->temporario[0] = '\0';
     contexto->destino[0] = '\0';
     contexto->quantidade_protegidos = 0;
+    contexto->quantidade_protegidos_obrigatorios = 0;
 }
 
 static void limpar_todos(void)
@@ -143,6 +146,7 @@ static int verificar_destino(
     struct stat alvo;
     struct stat link;
     struct stat atual;
+    int atual_valido;
     int i;
 
     if (
@@ -183,32 +187,47 @@ static int verificar_destino(
         i < contexto->quantidade_protegidos;
         i++
     ) {
+        atual_valido = 0;
+
         if (
             stat(
                 contexto->protegidos[i],
                 &atual
-            ) != 0
+            ) == 0
         ) {
+            atual_valido = 1;
+        } else if (
+            errno == ENOENT &&
+            i >= contexto->quantidade_protegidos_obrigatorios
+        ) {
+            atual_valido = 0;
+        } else {
             return falhar(
                 contexto,
                 saida,
-                "Nao foi possivel consultar a entrada"
+                "Nao foi possivel consultar arquivo protegido"
             );
         }
 
         if (
-            mesmo_arquivo(
-                &alvo,
-                &contexto->protegidos_originais[i]
+            (
+                contexto->protegido_original_valido[i] &&
+                mesmo_arquivo(
+                    &alvo,
+                    &contexto->protegidos_originais[i]
+                )
             ) ||
-            mesmo_arquivo(
-                &alvo,
-                &atual
+            (
+                atual_valido &&
+                mesmo_arquivo(
+                    &alvo,
+                    &atual
+                )
             )
         ) {
             mensagem(
                 saida,
-                "O destino aponta para um arquivo de entrada."
+                "O destino aponta para um arquivo protegido."
             );
 
             limpar_contexto(contexto);
@@ -236,6 +255,7 @@ static int abrir_saida(
     saida_segura *contexto,
     const char *const protegidos[],
     int quantidade_protegidos,
+    int quantidade_protegidos_obrigatorios,
     const char *caminho,
     char *saida,
     const char *mensagem_nome_invalido
@@ -266,7 +286,10 @@ static int abrir_saida(
 
     if (
         quantidade_protegidos < 1 ||
-        quantidade_protegidos > MAX_PROTEGIDOS
+        quantidade_protegidos > MAX_PROTEGIDOS ||
+        quantidade_protegidos_obrigatorios < 0 ||
+        quantidade_protegidos_obrigatorios >
+            quantidade_protegidos
     ) {
         errno = EINVAL;
 
@@ -292,6 +315,7 @@ static int abrir_saida(
     for (i = 0; i < quantidade_protegidos; i++) {
         if (
             !protegidos[i] ||
+            !*protegidos[i] ||
             strlen(protegidos[i]) >=
                 sizeof contexto->protegidos[i]
         ) {
@@ -308,22 +332,34 @@ static int abrir_saida(
             protegidos[i]
         );
 
+        contexto->protegido_original_valido[i] = 0;
+
         if (
             stat(
                 contexto->protegidos[i],
                 &contexto->protegidos_originais[i]
-            ) != 0
+            ) == 0
         ) {
+            contexto->protegido_original_valido[i] = 1;
+        } else if (
+            errno == ENOENT &&
+            i >= quantidade_protegidos_obrigatorios
+        ) {
+            contexto->protegido_original_valido[i] = 0;
+        } else {
             return falhar(
                 contexto,
                 saida,
-                "Nao foi possivel consultar a entrada"
+                "Nao foi possivel consultar arquivo protegido"
             );
         }
     }
 
     contexto->quantidade_protegidos =
         quantidade_protegidos;
+
+    contexto->quantidade_protegidos_obrigatorios =
+        quantidade_protegidos_obrigatorios;
 
     strcpy(pasta, caminho);
 
@@ -605,6 +641,7 @@ int relatorio_abrir(
         &contextos[CONTEXTO_RELATORIO],
         protegidos,
         2,
+        2,
         caminho,
         saida,
         "Nome de relatorio invalido."
@@ -646,18 +683,26 @@ int relatorio_confirmar(char *saida)
 int resultado_abrir(
     const char *esperados,
     const char *recebidos,
+    const char *relatorio,
     const char *caminho,
     char *saida
 )
 {
-    const char *protegidos[2] = {
+    const char *protegidos[3] = {
         esperados,
-        recebidos
+        recebidos,
+        relatorio
     };
 
+    /*
+     * Esperados e recebidos sao obrigatorios.
+     * O relatorio pode ainda nao existir quando o resultado e aberto.
+     * Ele sera consultado novamente antes da publicacao do resultado.
+     */
     return abrir_saida(
         &contextos[CONTEXTO_RESULTADO],
         protegidos,
+        3,
         2,
         caminho,
         saida,
