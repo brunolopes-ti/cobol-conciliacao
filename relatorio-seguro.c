@@ -634,3 +634,57 @@ int relatorio_confirmar(char *saida)
         "Falha ao publicar o relatorio"
     );
 }
+
+/*
+ * Interface publica destinada ao resultado estruturado.
+ *
+ * Usa um contexto independente do relatorio para que os dois
+ * arquivos possam ser produzidos sem compartilhar descritores,
+ * destino ou arquivo temporario.
+ */
+
+int resultado_abrir(
+    const char *esperados,
+    const char *recebidos,
+    const char *caminho,
+    char *saida
+)
+{
+    const char *protegidos[2] = {
+        esperados,
+        recebidos
+    };
+
+    return abrir_saida(
+        &contextos[CONTEXTO_RESULTADO],
+        protegidos,
+        2,
+        caminho,
+        saida,
+        "Nome de resultado invalido."
+    );
+}
+
+int resultado_linha(
+    const char *linha,
+    const int32_t *tamanho,
+    char *saida
+)
+{
+    return escrever_linha(
+        &contextos[CONTEXTO_RESULTADO],
+        linha,
+        tamanho,
+        saida
+    );
+}
+
+int resultado_confirmar(char *saida)
+{
+    return confirmar_saida(
+        &contextos[CONTEXTO_RESULTADO],
+        saida,
+        "Resultado nao iniciado",
+        "Falha ao publicar o resultado"
+    );
+}
