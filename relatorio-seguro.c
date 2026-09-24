@@ -1,10 +1,17 @@
-/* Ubuntu/POSIX: relatorio temporario, comparacao por inode e troca atomica.
- * As regras de conciliacao continuam em COBOL. Uma sessao por processo.
+/* Ubuntu/POSIX: saida temporaria, comparacao por inode e troca atomica.
+ * As regras de conciliacao continuam em COBOL.
+ *
+ * O estado de cada saida fica isolado em um contexto proprio.
+ * Isso permite manter mais de uma saida independente sem compartilhar
+ * descritores, destino ou arquivo temporario.
+ *
  * Caminhos sao strings terminadas em NUL; mensagem tem 160 bytes COBOL.
- * Retornos: 0 = sucesso, 1 = erro de E/S, 2 = destino igual a uma entrada.
+ * Retornos: 0 = sucesso, 1 = erro de E/S, 2 = destino igual a protegido.
+ *
  * Nao oferece isolamento contra alteracoes concorrentes das entradas.
  */
 #define _POSIX_C_SOURCE 200809L
+
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <fcntl.h>
@@ -17,190 +24,613 @@
 
 #define MENSAGEM_TAMANHO 160
 #define CAMINHO_TAMANHO 257
+#define MAX_PROTEGIDOS 4
 
-static int pasta_fd = -1;
-static int temporario_fd = -1;
-static char destino[CAMINHO_TAMANHO];
-static char temporario[80];
-static char entradas[2][CAMINHO_TAMANHO];
-static struct stat entradas_originais[2];
+enum {
+    CONTEXTO_RELATORIO = 0,
+    CONTEXTO_RESULTADO = 1,
+    QUANTIDADE_CONTEXTOS = 2
+};
+
+typedef struct {
+    int pasta_fd;
+    int temporario_fd;
+
+    char destino[CAMINHO_TAMANHO];
+    char temporario[80];
+
+    char protegidos[MAX_PROTEGIDOS][CAMINHO_TAMANHO];
+    struct stat protegidos_originais[MAX_PROTEGIDOS];
+    int quantidade_protegidos;
+} saida_segura;
+
+static saida_segura contextos[QUANTIDADE_CONTEXTOS] = {
+    {
+        .pasta_fd = -1,
+        .temporario_fd = -1
+    },
+    {
+        .pasta_fd = -1,
+        .temporario_fd = -1
+    }
+};
+
 static unsigned long sequencia;
 static int limpeza_registrada;
 
 static void mensagem(char *saida, const char *texto)
 {
     size_t n = strlen(texto);
-    if (n > MENSAGEM_TAMANHO) n = MENSAGEM_TAMANHO;
+
+    if (n > MENSAGEM_TAMANHO)
+        n = MENSAGEM_TAMANHO;
+
     memset(saida, ' ', MENSAGEM_TAMANHO);
     memcpy(saida, texto, n);
 }
 
-static void limpar(void)
+static void limpar_contexto(saida_segura *contexto)
 {
-    if (temporario_fd >= 0) {
-        close(temporario_fd);
-        temporario_fd = -1;
+    if (contexto->temporario_fd >= 0) {
+        close(contexto->temporario_fd);
+        contexto->temporario_fd = -1;
     }
-    if (pasta_fd >= 0) {
-        if (temporario[0]) unlinkat(pasta_fd, temporario, 0);
-        close(pasta_fd);
-        pasta_fd = -1;
+
+    if (contexto->pasta_fd >= 0) {
+        if (contexto->temporario[0]) {
+            unlinkat(
+                contexto->pasta_fd,
+                contexto->temporario,
+                0
+            );
+        }
+
+        close(contexto->pasta_fd);
+        contexto->pasta_fd = -1;
     }
-    temporario[0] = '\0';
+
+    contexto->temporario[0] = '\0';
+    contexto->destino[0] = '\0';
+    contexto->quantidade_protegidos = 0;
 }
 
-static int falhar(char *saida, const char *etapa)
+static void limpar_todos(void)
+{
+    int i;
+
+    for (i = 0; i < QUANTIDADE_CONTEXTOS; i++)
+        limpar_contexto(&contextos[i]);
+}
+
+static int falhar(
+    saida_segura *contexto,
+    char *saida,
+    const char *etapa
+)
 {
     int erro = errno;
     char texto[320];
-    snprintf(texto, sizeof texto, "%s: %s", etapa, strerror(erro));
+
+    snprintf(
+        texto,
+        sizeof texto,
+        "%s: %s",
+        etapa,
+        strerror(erro)
+    );
+
     mensagem(saida, texto);
-    limpar();
+    limpar_contexto(contexto);
+
     return 1;
 }
 
-static int mesmo_arquivo(const struct stat *a, const struct stat *b)
+static int mesmo_arquivo(
+    const struct stat *a,
+    const struct stat *b
+)
 {
-    return a->st_dev == b->st_dev && a->st_ino == b->st_ino;
+    return
+        a->st_dev == b->st_dev &&
+        a->st_ino == b->st_ino;
 }
 
-static int verificar_destino(char *saida)
+static int verificar_destino(
+    saida_segura *contexto,
+    char *saida
+)
 {
-    struct stat alvo, link, atual;
-    if (fstatat(pasta_fd, destino, &link, AT_SYMLINK_NOFOLLOW) != 0) {
-        if (errno == ENOENT) return 0;
-        return falhar(saida, "Nao foi possivel consultar o destino");
-    }
-    if (fstatat(pasta_fd, destino, &alvo, 0) != 0)
-        return falhar(saida, "Destino inacessivel");
+    struct stat alvo;
+    struct stat link;
+    struct stat atual;
+    int i;
 
-    for (int i = 0; i < 2; i++) {
-        if (stat(entradas[i], &atual) != 0)
-            return falhar(saida, "Nao foi possivel consultar a entrada");
-        if (mesmo_arquivo(&alvo, &entradas_originais[i]) ||
-            mesmo_arquivo(&alvo, &atual)) {
-            mensagem(saida, "O destino aponta para um arquivo de entrada.");
-            limpar();
+    if (
+        fstatat(
+            contexto->pasta_fd,
+            contexto->destino,
+            &link,
+            AT_SYMLINK_NOFOLLOW
+        ) != 0
+    ) {
+        if (errno == ENOENT)
+            return 0;
+
+        return falhar(
+            contexto,
+            saida,
+            "Nao foi possivel consultar o destino"
+        );
+    }
+
+    if (
+        fstatat(
+            contexto->pasta_fd,
+            contexto->destino,
+            &alvo,
+            0
+        ) != 0
+    ) {
+        return falhar(
+            contexto,
+            saida,
+            "Destino inacessivel"
+        );
+    }
+
+    for (
+        i = 0;
+        i < contexto->quantidade_protegidos;
+        i++
+    ) {
+        if (
+            stat(
+                contexto->protegidos[i],
+                &atual
+            ) != 0
+        ) {
+            return falhar(
+                contexto,
+                saida,
+                "Nao foi possivel consultar a entrada"
+            );
+        }
+
+        if (
+            mesmo_arquivo(
+                &alvo,
+                &contexto->protegidos_originais[i]
+            ) ||
+            mesmo_arquivo(
+                &alvo,
+                &atual
+            )
+        ) {
+            mensagem(
+                saida,
+                "O destino aponta para um arquivo de entrada."
+            );
+
+            limpar_contexto(contexto);
             return 2;
         }
     }
-    if (S_ISLNK(link.st_mode) || !S_ISREG(link.st_mode)) {
-        mensagem(saida, "O destino deve ser um arquivo comum, sem link simbolico.");
-        limpar();
+
+    if (
+        S_ISLNK(link.st_mode) ||
+        !S_ISREG(link.st_mode)
+    ) {
+        mensagem(
+            saida,
+            "O destino deve ser um arquivo comum, sem link simbolico."
+        );
+
+        limpar_contexto(contexto);
         return 1;
     }
+
     return 0;
 }
 
-int relatorio_abrir(const char *esperados, const char *recebidos,
-                    const char *caminho, char *saida)
+static int abrir_saida(
+    saida_segura *contexto,
+    const char *const protegidos[],
+    int quantidade_protegidos,
+    const char *caminho,
+    char *saida,
+    const char *mensagem_nome_invalido
+)
 {
     char pasta[CAMINHO_TAMANHO];
+    char candidato[80];
     char *barra;
     int codigo;
-    limpar();
+    int i;
+    int tentativa;
+
+    limpar_contexto(contexto);
     mensagem(saida, "");
+
     if (!limpeza_registrada) {
-        if (atexit(limpar) != 0) {
-            mensagem(saida, "Nao foi possivel registrar limpeza do temporario.");
+        if (atexit(limpar_todos) != 0) {
+            mensagem(
+                saida,
+                "Nao foi possivel registrar limpeza do temporario."
+            );
+
             return 1;
         }
+
         limpeza_registrada = 1;
     }
-    if (!*caminho || strlen(caminho) >= sizeof pasta ||
-        strlen(esperados) >= sizeof entradas[0] ||
-        strlen(recebidos) >= sizeof entradas[1]) {
-        mensagem(saida, "Caminho vazio ou acima de 256 bytes.");
+
+    if (
+        quantidade_protegidos < 1 ||
+        quantidade_protegidos > MAX_PROTEGIDOS
+    ) {
+        errno = EINVAL;
+
+        return falhar(
+            contexto,
+            saida,
+            "Quantidade de arquivos protegidos invalida"
+        );
+    }
+
+    if (
+        !*caminho ||
+        strlen(caminho) >= sizeof pasta
+    ) {
+        mensagem(
+            saida,
+            "Caminho vazio ou acima de 256 bytes."
+        );
+
         return 1;
     }
-    strcpy(entradas[0], esperados);
-    strcpy(entradas[1], recebidos);
-    for (int i = 0; i < 2; i++) {
-        if (stat(entradas[i], &entradas_originais[i]) != 0)
-            return falhar(saida, "Nao foi possivel consultar a entrada");
+
+    for (i = 0; i < quantidade_protegidos; i++) {
+        if (
+            !protegidos[i] ||
+            strlen(protegidos[i]) >=
+                sizeof contexto->protegidos[i]
+        ) {
+            mensagem(
+                saida,
+                "Caminho vazio ou acima de 256 bytes."
+            );
+
+            return 1;
+        }
+
+        strcpy(
+            contexto->protegidos[i],
+            protegidos[i]
+        );
+
+        if (
+            stat(
+                contexto->protegidos[i],
+                &contexto->protegidos_originais[i]
+            ) != 0
+        ) {
+            return falhar(
+                contexto,
+                saida,
+                "Nao foi possivel consultar a entrada"
+            );
+        }
     }
+
+    contexto->quantidade_protegidos =
+        quantidade_protegidos;
+
     strcpy(pasta, caminho);
+
     barra = strrchr(pasta, '/');
+
     if (barra) {
-        strcpy(destino, barra + 1);
-        if (barra == pasta) barra[1] = '\0';
-        else *barra = '\0';
+        strcpy(
+            contexto->destino,
+            barra + 1
+        );
+
+        if (barra == pasta)
+            barra[1] = '\0';
+        else
+            *barra = '\0';
     } else {
-        strcpy(destino, caminho);
+        strcpy(
+            contexto->destino,
+            caminho
+        );
+
         strcpy(pasta, ".");
     }
-    if (!*destino || !strcmp(destino, ".") || !strcmp(destino, "..")) {
-        mensagem(saida, "Nome de relatorio invalido.");
+
+    if (
+        !*contexto->destino ||
+        !strcmp(contexto->destino, ".") ||
+        !strcmp(contexto->destino, "..")
+    ) {
+        mensagem(
+            saida,
+            mensagem_nome_invalido
+        );
+
+        limpar_contexto(contexto);
         return 1;
     }
-    pasta_fd = open(pasta, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    if (pasta_fd < 0) return falhar(saida, "Nao foi possivel abrir a pasta");
-    codigo = verificar_destino(saida);
-    if (codigo) return codigo;
 
-    for (int tentativa = 0; tentativa < 100; tentativa++) {
-        char candidato[80];
-        snprintf(candidato, sizeof candidato, ".conciliacao-%ld-%lu.tmp",
-                 (long)getpid(), ++sequencia);
-        temporario_fd = openat(pasta_fd, candidato,
-            O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
-        if (temporario_fd >= 0) {
-            strcpy(temporario, candidato);
+    contexto->pasta_fd = open(
+        pasta,
+        O_RDONLY |
+        O_DIRECTORY |
+        O_CLOEXEC
+    );
+
+    if (contexto->pasta_fd < 0) {
+        return falhar(
+            contexto,
+            saida,
+            "Nao foi possivel abrir a pasta"
+        );
+    }
+
+    codigo = verificar_destino(
+        contexto,
+        saida
+    );
+
+    if (codigo)
+        return codigo;
+
+    for (tentativa = 0; tentativa < 100; tentativa++) {
+        snprintf(
+            candidato,
+            sizeof candidato,
+            ".conciliacao-%ld-%lu.tmp",
+            (long)getpid(),
+            ++sequencia
+        );
+
+        contexto->temporario_fd = openat(
+            contexto->pasta_fd,
+            candidato,
+            O_WRONLY |
+            O_CREAT |
+            O_EXCL |
+            O_NOFOLLOW |
+            O_CLOEXEC,
+            0600
+        );
+
+        if (contexto->temporario_fd >= 0) {
+            strcpy(
+                contexto->temporario,
+                candidato
+            );
+
             return 0;
         }
-        if (errno != EEXIST)
-            return falhar(saida, "Nao foi possivel criar o temporario");
+
+        if (errno != EEXIST) {
+            return falhar(
+                contexto,
+                saida,
+                "Nao foi possivel criar o temporario"
+            );
+        }
     }
+
     errno = EEXIST;
-    return falhar(saida, "Nao foi possivel criar temporario exclusivo");
+
+    return falhar(
+        contexto,
+        saida,
+        "Nao foi possivel criar temporario exclusivo"
+    );
 }
 
-static int escrever(const char *dados, size_t tamanho)
+static int escrever(
+    saida_segura *contexto,
+    const char *dados,
+    size_t tamanho
+)
 {
     while (tamanho) {
-        ssize_t n = write(temporario_fd, dados, tamanho);
-        if (n < 0 && errno == EINTR) continue;
+        ssize_t n = write(
+            contexto->temporario_fd,
+            dados,
+            tamanho
+        );
+
+        if (
+            n < 0 &&
+            errno == EINTR
+        ) {
+            continue;
+        }
+
         if (n <= 0) {
-            if (!n) errno = EIO;
+            if (!n)
+                errno = EIO;
+
             return -1;
         }
+
         dados += n;
         tamanho -= (size_t)n;
     }
+
     return 0;
 }
 
-int relatorio_linha(const char *linha, const int32_t *tamanho, char *saida)
+static int escrever_linha(
+    saida_segura *contexto,
+    const char *linha,
+    const int32_t *tamanho,
+    char *saida
+)
 {
-    if (temporario_fd < 0 || *tamanho < 0 || *tamanho > 512) {
+    if (
+        contexto->temporario_fd < 0 ||
+        *tamanho < 0 ||
+        *tamanho > 512
+    ) {
         errno = EINVAL;
-        return falhar(saida, "Estado ou tamanho de linha invalido");
+
+        return falhar(
+            contexto,
+            saida,
+            "Estado ou tamanho de linha invalido"
+        );
     }
-    if (escrever(linha, (size_t)*tamanho) || escrever("\n", 1))
-        return falhar(saida, "Falha na gravacao do temporario");
+
+    if (
+        escrever(
+            contexto,
+            linha,
+            (size_t)*tamanho
+        ) ||
+        escrever(
+            contexto,
+            "\n",
+            1
+        )
+    ) {
+        return falhar(
+            contexto,
+            saida,
+            "Falha na gravacao do temporario"
+        );
+    }
+
     mensagem(saida, "");
     return 0;
+}
+
+static int confirmar_saida(
+    saida_segura *contexto,
+    char *saida,
+    const char *mensagem_nao_iniciado,
+    const char *mensagem_publicacao
+)
+{
+    int codigo;
+    int fd;
+
+    if (contexto->temporario_fd < 0) {
+        errno = EINVAL;
+
+        return falhar(
+            contexto,
+            saida,
+            mensagem_nao_iniciado
+        );
+    }
+
+    if (
+        fsync(contexto->temporario_fd) != 0
+    ) {
+        return falhar(
+            contexto,
+            saida,
+            "Falha ao sincronizar o temporario"
+        );
+    }
+
+    fd = contexto->temporario_fd;
+    contexto->temporario_fd = -1;
+
+    if (close(fd) != 0) {
+        return falhar(
+            contexto,
+            saida,
+            "Falha ao fechar o temporario"
+        );
+    }
+
+    codigo = verificar_destino(
+        contexto,
+        saida
+    );
+
+    if (codigo)
+        return codigo;
+
+    if (
+        renameat(
+            contexto->pasta_fd,
+            contexto->temporario,
+            contexto->pasta_fd,
+            contexto->destino
+        ) != 0
+    ) {
+        return falhar(
+            contexto,
+            saida,
+            mensagem_publicacao
+        );
+    }
+
+    contexto->temporario[0] = '\0';
+
+    limpar_contexto(contexto);
+    mensagem(saida, "");
+
+    return 0;
+}
+
+/*
+ * Interface publica atual usada pelo COBOL.
+ *
+ * As assinaturas abaixo permanecem inalteradas para que esta
+ * refatoracao nao modifique o contrato existente.
+ */
+
+int relatorio_abrir(
+    const char *esperados,
+    const char *recebidos,
+    const char *caminho,
+    char *saida
+)
+{
+    const char *protegidos[2] = {
+        esperados,
+        recebidos
+    };
+
+    return abrir_saida(
+        &contextos[CONTEXTO_RELATORIO],
+        protegidos,
+        2,
+        caminho,
+        saida,
+        "Nome de relatorio invalido."
+    );
+}
+
+int relatorio_linha(
+    const char *linha,
+    const int32_t *tamanho,
+    char *saida
+)
+{
+    return escrever_linha(
+        &contextos[CONTEXTO_RELATORIO],
+        linha,
+        tamanho,
+        saida
+    );
 }
 
 int relatorio_confirmar(char *saida)
 {
-    int codigo, fd;
-    if (temporario_fd < 0) {
-        errno = EINVAL;
-        return falhar(saida, "Relatorio nao iniciado");
-    }
-    if (fsync(temporario_fd) != 0)
-        return falhar(saida, "Falha ao sincronizar o temporario");
-    fd = temporario_fd;
-    temporario_fd = -1;
-    if (close(fd) != 0)
-        return falhar(saida, "Falha ao fechar o temporario");
-    codigo = verificar_destino(saida);
-    if (codigo) return codigo;
-    if (renameat(pasta_fd, temporario, pasta_fd, destino) != 0)
-        return falhar(saida, "Falha ao publicar o relatorio");
-    temporario[0] = '\0';
-    limpar();
-    mensagem(saida, "");
-    return 0;
+    return confirmar_saida(
+        &contextos[CONTEXTO_RELATORIO],
+        saida,
+        "Relatorio nao iniciado",
+        "Falha ao publicar o relatorio"
+    );
 }
