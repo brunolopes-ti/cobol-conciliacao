@@ -11,13 +11,15 @@ working-storage section.
     value "dados/recebidos.csv".
 01 caminho-relatorio pic x(256)
     value "relatorio.txt".
+01 caminho-resultado pic x(256)
+    value "resultado.tsv".
 01 quantidade-argumentos binary-long.
 01 indice-argumento binary-long.
 01 argumento-bruto pic x(256) value spaces.
 01 capacidade-argumento binary-long value 256.
 01 tamanho-argumento binary-long value zero.
 01 argumentos.
-   05 caminho-argumento pic x(256) occurs 3 times.
+   05 caminho-argumento pic x(256) occurs 4 times.
 
 01 caminho-arquivo pic x(256) value spaces.
 01 status-arquivo pic 99 value zero.
@@ -138,18 +140,21 @@ configurar-argumentos.
         exit paragraph
     end-if
 
-    if quantidade-argumentos not = 3
-        display "Erro: informe zero ou tres argumentos."
+    if quantidade-argumentos not = 4
+        display "Erro: informe zero ou quatro argumentos."
         perform encerrar-uso
     end-if
 
     perform varying indice-argumento from 1 by 1
-        until indice-argumento > 3
+        until indice-argumento > 4
 
         move spaces to argumento-bruto
+
         call static "entrada_argumento" using
-            indice-argumento argumento-bruto
-            capacidade-argumento tamanho-argumento
+            indice-argumento
+            argumento-bruto
+            capacidade-argumento
+            tamanho-argumento
             returning codigo-entrada
         end-call
 
@@ -157,15 +162,18 @@ configurar-argumentos.
             when 4
                 display "Erro: caminho excede 256 posicoes."
                 perform encerrar-uso
+
             when zero
                 continue
+
             when other
                 display
                     "Erro: argumento invalido ou nao foi possivel le-lo."
                 perform encerrar-uso
         end-evaluate
 
-        if argumento-bruto = spaces or tamanho-argumento = zero
+        if argumento-bruto = spaces
+            or tamanho-argumento = zero
             display "Erro: caminho vazio."
             perform encerrar-uso
         end-if
@@ -182,16 +190,26 @@ configurar-argumentos.
     move caminho-argumento(1) to caminho-esperados
     move caminho-argumento(2) to caminho-recebidos
     move caminho-argumento(3) to caminho-relatorio
+    move caminho-argumento(4) to caminho-resultado
 
     if caminho-relatorio = caminho-esperados
         or caminho-relatorio = caminho-recebidos
         display
             "Erro: relatorio deve ter caminho diferente das entradas."
         perform encerrar-uso
+    end-if
+
+    if caminho-resultado = caminho-esperados
+        or caminho-resultado = caminho-recebidos
+        or caminho-resultado = caminho-relatorio
+        display
+            "Erro: resultado deve ter caminho diferente dos demais arquivos."
+        perform encerrar-uso
     end-if.
 
 encerrar-uso.
-    display "Uso: ./conciliacao [esperados recebidos relatorio]"
+    display
+        "Uso: ./conciliacao [esperados recebidos relatorio resultado]"
     move 2 to return-code
     stop run.
 
