@@ -32,6 +32,7 @@ executar_suite "resultado estruturado" "testar-resultado.sh"
 executar_suite "argumentos" "testar-argumentos.sh"
 executar_suite "protecao dos arquivos" "testar-protecao-arquivos.sh"
 executar_suite "limites das entradas" "testar-limites.sh"
+executar_suite "publicacao das saidas" "testar-publicacao-saidas.sh"
 
 echo
 echo "Resumo geral:"

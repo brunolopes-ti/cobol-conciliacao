@@ -191,11 +191,7 @@ Antes da execução, o backend deverá verificar que o caminho configurado:
 
 # 4. Interface de argumentos do COBOL
 
-A versão atual do programa COBOL aceita zero ou três argumentos.
-
-Para integração com o backend, essa interface será evoluída.
-
-A interface de integração passará a utilizar quatro argumentos:
+A versão atual aceita zero argumentos (caminhos padrão) ou quatro argumentos:
 
 ```text
 conciliacao esperados.csv recebidos.csv relatorio.txt resultado.tsv
@@ -214,8 +210,8 @@ Os quatro caminhos serão enviados separadamente por `ProcessBuilder`.
 
 O processo não precisará receber dados pela entrada padrão.
 
-A alteração para quatro argumentos deverá ser implementada e
-testada antes da integração real com o backend.
+A interface de quatro argumentos e a geração do TSV versão 1 estão
+implementadas e cobertas pelas suítes automatizadas.
 
 Essa evolução não deverá modificar as regras de conciliação já
 validadas.
@@ -633,9 +629,8 @@ cobrança válida à qual os pagamentos possam ser associados.
 A camada SQL deverá seguir a mesma regra quando apresentar resultados
 detalhados.
 
-Antes da integração com o backend, a view SQL detalhada deverá ser
-ajustada caso ainda esteja limitando cobranças inexistentes ao primeiro
-pagamento do identificador.
+A view SQL detalhada já apresenta cada pagamento sem cobrança
+individualmente, conforme os testes de `sql/04-validacao.sql`.
 
 ---
 
@@ -1908,3 +1903,25 @@ Nenhuma camada deverá depender de comportamento implícito de outra.
 
 Quando um comportamento fizer parte da integração, ele deverá ser
 documentado, testado e versionado.
+
+
+# Publicação coordenada de TXT e TSV
+
+As duas saídas são gravadas em temporários, sincronizadas e fechadas
+antes de qualquer publicação. Caminhos equivalentes para o mesmo destino
+são rejeitados mesmo quando o arquivo ainda não existe.
+
+A publicação é coordenada: uma reserva do relatório anterior permite
+restaurá-lo se a publicação do TSV falhar. Se não havia relatório, o novo
+é removido nessa recuperação. O TSV anterior permanece intacto.
+
+Isso não constitui uma troca atômica do par: os arquivos são substituídos
+em sequência. Queda de energia, encerramento forçado e alterações
+concorrentes não têm recuperação automática garantida. O backend deve
+usar uma pasta exclusiva por execução e consumir as saídas somente após
+o processo terminar com código 0 e a validação do TSV ser aprovada.
+
+Se a própria recuperação falhar, o programa retorna 1 e informa o nome
+da reserva `.conciliacao-*.bak`, mantida na pasta do relatório para
+recuperação manual. Nenhum sucesso é anunciado. Uma falha na limpeza da
+reserva após publicar ambas as saídas também retorna 1.

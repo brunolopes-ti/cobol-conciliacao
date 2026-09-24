@@ -147,26 +147,14 @@ procedure division.
     move "Conferencia concluida." to linha-relatorio
     perform gravar-linha
 
-    call static "relatorio_confirmar" using
+    call static "saidas_confirmar" using
         by reference erro-relatorio
         returning codigo-relatorio
     end-call
 
     if codigo-relatorio not = zero
-        display "Erro ao publicar relatorio: "
+        display "Erro ao publicar saidas: "
             function trim(erro-relatorio)
-        move 1 to return-code
-        stop run
-    end-if
-
-    call static "resultado_confirmar" using
-        by reference erro-resultado
-        returning codigo-resultado
-    end-call
-
-    if codigo-resultado not = zero
-        display "Erro ao publicar resultado: "
-            function trim(erro-resultado)
         move 1 to return-code
         stop run
     end-if

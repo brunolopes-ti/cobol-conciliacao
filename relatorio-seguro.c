@@ -413,6 +413,23 @@ static int abrir_saida(
         );
     }
 
+    /* Mesmo diretorio fisico + mesmo nome: colisao mesmo sem arquivo. */
+    for (i = 0; i < QUANTIDADE_CONTEXTOS; i++) {
+        saida_segura *outro = &contextos[i];
+        struct stat pasta_atual, pasta_outra;
+        if (outro == contexto || outro->pasta_fd < 0)
+            continue;
+        if (fstat(contexto->pasta_fd, &pasta_atual) != 0 ||
+            fstat(outro->pasta_fd, &pasta_outra) != 0)
+            return falhar(contexto, saida, "Falha ao comparar pastas");
+        if (mesmo_arquivo(&pasta_atual, &pasta_outra) &&
+            strcmp(contexto->destino, outro->destino) == 0) {
+            mensagem(saida, "Relatorio e resultado apontam para o mesmo destino.");
+            limpar_contexto(contexto);
+            return 2;
+        }
+    }
+
     codigo = verificar_destino(
         contexto,
         saida
@@ -732,4 +749,112 @@ int resultado_confirmar(char *saida)
         "Resultado nao iniciado",
         "Falha ao publicar o resultado"
     );
+}
+
+/* Publicacao coordenada com recuperacao de falhas detectadas.
+ * Nao e uma transacao atomica de dois arquivos nem tolerante a SIGKILL.
+ * O chamador deve usar um diretorio exclusivo e aceitar apenas retorno 0.
+ */
+int saidas_confirmar(char *saida)
+{
+    saida_segura *rel = &contextos[CONTEXTO_RELATORIO];
+    saida_segura *res = &contextos[CONTEXTO_RESULTADO];
+    char reserva[80] = "";
+    struct stat anterior;
+    int tinha_relatorio, i, fd, erro, restaurado, reserva_criada = 0;
+
+    /* Nenhum destino e alterado antes de sincronizar e fechar ambos. */
+    for (i = 0; i < QUANTIDADE_CONTEXTOS; i++) {
+        saida_segura *ctx = &contextos[i];
+        if (ctx->temporario_fd < 0) {
+            errno = EINVAL;
+            falhar(ctx, saida, "Saida nao iniciada");
+            limpar_todos();
+            return 1;
+        }
+        if (fsync(ctx->temporario_fd) != 0) {
+            falhar(ctx, saida, "Falha ao sincronizar o temporario");
+            limpar_todos();
+            return 1;
+        }
+        fd = ctx->temporario_fd;
+        ctx->temporario_fd = -1;
+        if (close(fd) != 0) {
+            falhar(ctx, saida, "Falha ao fechar o temporario");
+            limpar_todos();
+            return 1;
+        }
+        if (verificar_destino(ctx, saida)) {
+            limpar_todos();
+            return 1;
+        }
+    }
+
+    tinha_relatorio = fstatat(rel->pasta_fd, rel->destino,
+                             &anterior, AT_SYMLINK_NOFOLLOW) == 0;
+    if (!tinha_relatorio && errno != ENOENT) {
+        falhar(rel, saida, "Falha ao consultar relatorio anterior");
+        limpar_todos();
+        return 1;
+    }
+    if (tinha_relatorio) {
+        /* linkat cria uma reserva exclusiva do inode anterior, sem copia. */
+        for (i = 0; i < 100; i++) {
+            snprintf(reserva, sizeof reserva, ".conciliacao-%ld-%lu.bak",
+                     (long)getpid(), ++sequencia);
+            if (linkat(rel->pasta_fd, rel->destino,
+                       rel->pasta_fd, reserva, 0) == 0) {
+                reserva_criada = 1;
+                break;
+            }
+            if (errno != EEXIST)
+                break;
+        }
+        if (!reserva_criada) {
+            falhar(rel, saida, "Falha ao reservar relatorio anterior");
+            limpar_todos();
+            return 1;
+        }
+    }
+
+    if (renameat(rel->pasta_fd, rel->temporario,
+                 rel->pasta_fd, rel->destino) != 0) {
+        erro = errno;
+        if (reserva[0]) unlinkat(rel->pasta_fd, reserva, 0);
+        errno = erro;
+        falhar(rel, saida, "Falha ao publicar relatorio");
+        limpar_todos();
+        return 1;
+    }
+    rel->temporario[0] = '\0';
+
+    /* Nova verificacao imediatamente antes da segunda publicacao. */
+    if (verificar_destino(res, saida) != 0 ||
+        renameat(res->pasta_fd, res->temporario,
+                 res->pasta_fd, res->destino) != 0) {
+        restaurado = tinha_relatorio
+            ? renameat(rel->pasta_fd, reserva, rel->pasta_fd, rel->destino)
+            : unlinkat(rel->pasta_fd, rel->destino, 0);
+        if (restaurado == 0) {
+            mensagem(saida, "Falha ao publicar resultado; saidas anteriores preservadas.");
+        } else {
+            char texto[160];
+            snprintf(texto, sizeof texto,
+                     "Falha na publicacao e recuperacao; reserva na pasta do relatorio: %s",
+                     reserva[0] ? reserva : "inexistente");
+            mensagem(saida, texto);
+            /* A reserva fica disponivel para recuperacao manual. */
+        }
+        limpar_todos();
+        return 1;
+    }
+    res->temporario[0] = '\0';
+    if (reserva[0] && unlinkat(rel->pasta_fd, reserva, 0) != 0) {
+        mensagem(saida, "Saidas publicadas, mas falhou a limpeza da reserva do relatorio.");
+        limpar_todos();
+        return 1;
+    }
+    limpar_todos();
+    mensagem(saida, "");
+    return 0;
 }
