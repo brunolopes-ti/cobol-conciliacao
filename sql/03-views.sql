@@ -40,8 +40,7 @@ SELECT
 FROM pagamentos_analisados p
 LEFT JOIN cobrancas c
     ON p.identificador_cobranca = c.identificador
-WHERE c.id IS NULL
-  AND p.numero = 1;
+WHERE c.id IS NULL;
 
 CREATE OR REPLACE VIEW vw_resumo_financeiro AS
 WITH pagamentos_numerados AS (
@@ -66,38 +65,58 @@ cobrancas_analisadas AS (
 ),
 metricas AS (
     SELECT
-        (SELECT COALESCE(SUM(valor_esperado), 0)
-         FROM cobrancas) AS total_esperado,
+        (
+            SELECT COALESCE(SUM(valor_esperado), 0)
+            FROM cobrancas
+        ) AS total_esperado,
 
-        (SELECT COALESCE(SUM(valor_pago), 0)
-         FROM pagamentos) AS total_recebido_bruto,
+        (
+            SELECT COALESCE(SUM(valor_pago), 0)
+            FROM pagamentos
+        ) AS total_recebido_bruto,
 
-        (SELECT COALESCE(SUM(p.valor_pago), 0)
-         FROM pagamentos_numerados p
-         JOIN cobrancas c
-             ON p.identificador_cobranca = c.identificador
-         WHERE p.numero > 1) AS total_duplicado,
+        (
+            SELECT COALESCE(SUM(p.valor_pago), 0)
+            FROM pagamentos_numerados p
+            JOIN cobrancas c
+                ON p.identificador_cobranca = c.identificador
+            WHERE p.numero > 1
+        ) AS total_duplicado,
 
-        -- Todos os pagamentos sem cobrança entram nesta categoria.
-        (SELECT COALESCE(SUM(p.valor_pago), 0)
-         FROM pagamentos_numerados p
-         LEFT JOIN cobrancas c
-             ON p.identificador_cobranca = c.identificador
-         WHERE c.id IS NULL) AS total_cobranca_inexistente,
+        -- Todos os pagamentos sem cobranca entram nesta categoria.
+        (
+            SELECT COALESCE(SUM(p.valor_pago), 0)
+            FROM pagamentos_numerados p
+            LEFT JOIN cobrancas c
+                ON p.identificador_cobranca = c.identificador
+            WHERE c.id IS NULL
+        ) AS total_cobranca_inexistente,
 
-        -- Mantém o nome existente: primeiro pagamento por cobrança.
-        (SELECT COALESCE(SUM(valor_principal), 0)
-         FROM cobrancas_analisadas) AS total_pago_valido,
+        -- Mantem o nome existente: primeiro pagamento por cobranca.
+        (
+            SELECT COALESCE(SUM(valor_principal), 0)
+            FROM cobrancas_analisadas
+        ) AS total_pago_valido,
 
-        (SELECT COALESCE(SUM(
-             GREATEST(valor_esperado - valor_principal, 0)
-         ), 0)
-         FROM cobrancas_analisadas) AS valor_pendente,
+        (
+            SELECT COALESCE(SUM(
+                GREATEST(
+                    valor_esperado - valor_principal,
+                    0
+                )
+            ), 0)
+            FROM cobrancas_analisadas
+        ) AS valor_pendente,
 
-        (SELECT COALESCE(SUM(
-             GREATEST(valor_principal - valor_esperado, 0)
-         ), 0)
-         FROM cobrancas_analisadas) AS valor_excedente
+        (
+            SELECT COALESCE(SUM(
+                GREATEST(
+                    valor_principal - valor_esperado,
+                    0
+                )
+            ), 0)
+            FROM cobrancas_analisadas
+        ) AS valor_excedente
 )
 SELECT
     total_esperado,
