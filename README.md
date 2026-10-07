@@ -22,17 +22,15 @@ Os dados utilizados são fictícios.
 | Resumo financeiro, relatório TXT e resultado TSV v1 | Implementados |
 | Caminhos por argumentos de terminal | Implementados |
 | Proteções adicionais de entrada e relatório | Implementadas |
-| Testes automatizados COBOL | 9 suítes aprovadas |
+| Testes automatizados COBOL | 10 suítes, incluindo contrato Unicode |
 | Estrutura, views e restrições PostgreSQL | Implementadas e validadas |
 | Integração direta entre banco e COBOL | Pendente |
-| Backend Java | Planejado |
+| Backend Java | Implementado até consultas, histórico e relatórios |
 | Backend .NET | Planejado |
 | Interface Angular | Planejada |
 | Interfaces Vue e React | Planejadas |
 
-O banco e o motor COBOL ainda funcionam separadamente.
-
-A aplicação web ainda não foi implementada.
+O motor COBOL já é integrado pelo backend Java; o backend .NET e as interfaces web permanecem em evolução.
 
 ---
 
@@ -481,7 +479,7 @@ seu próprio `SEM_PREVISAO`, inclusive quando o identificador se repete.
 Campos monetários não aplicáveis ficam vazios.
 
 O contrato completo está em [docs/contrato-integracao.md](docs/contrato-integracao.md).
-O backend Java ainda não foi implementado.
+O backend Java já está implementado e consome este contrato de integração.
 
 ## Publicação das saídas
 
@@ -550,7 +548,7 @@ das suítes.
 
 ## Suítes atuais
 
-O projeto possui nove suítes automatizadas:
+O projeto possui dez suítes automatizadas:
 
 | Suíte | Finalidade |
 |---|---|
@@ -562,12 +560,13 @@ O projeto possui nove suítes automatizadas:
 | Publicação das saídas | Colisões, falhas e recuperação do par TXT/TSV |
 | Argumentos | Caminhos e argumentos de terminal |
 | Limites das entradas | Limites e entradas inválidas |
+| Identificadores Unicode | Alinhamento do contrato de espaços Unicode, incluindo U+2007 |
 | Proteção de arquivos | Segurança dos arquivos de entrada e saída |
 
 Resultado confirmado localmente:
 
 ```text
-Suites aprovadas: 9
+Suites aprovadas: 10
 Suites reprovadas: 0
 VERIFICACAO COMPLETA: PASSOU
 ```
@@ -614,7 +613,7 @@ Os testes não representam todas as combinações possíveis,
 mas cobrem os principais fluxos e casos de erro atualmente
 previstos para o projeto.
 
-O GitHub Actions ainda não foi configurado.
+O GitHub Actions executa as suítes automaticamente em push e pull request.
 
 ---
 
@@ -960,3 +959,12 @@ como experiência já adquirida neste projeto.
 Bruno Ramos Lopes
 
 Projeto educacional e de portfólio com dados fictícios.
+
+## Contrato Unicode dos identificadores
+
+Java, PostgreSQL e COBOL usam a mesma regra de bordas para identificadores.
+Sao tratados como espaco: U+0020, U+1680, U+2000 ate U+200A, U+2028,
+U+2029, U+205F e U+3000. Esses caracteres sao rejeitados nas extremidades
+e um identificador composto apenas por eles e invalido. Espacos permitidos
+no interior nao sao removidos silenciosamente; a identidade do texto e
+preservada.

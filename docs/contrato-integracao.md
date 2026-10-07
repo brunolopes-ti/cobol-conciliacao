@@ -1925,3 +1925,13 @@ Se a própria recuperação falhar, o programa retorna 1 e informa o nome
 da reserva `.conciliacao-*.bak`, mantida na pasta do relatório para
 recuperação manual. Nenhum sucesso é anunciado. Uma falha na limpeza da
 reserva após publicar ambas as saídas também retorna 1.
+
+# Alinhamento Unicode da revisao operacional
+
+O contrato de identificadores foi explicitado para eliminar divergencia entre
+Java, PostgreSQL e COBOL. Sao considerados espacos de borda: U+0020, U+1680,
+U+2000..U+200A, U+2028, U+2029, U+205F e U+3000. U+2007 esta incluido.
+
+Identificadores apenas com esses espacos ou com um deles na primeira/ultima
+posicao sao rejeitados. Caracteres de controle e `;` continuam proibidos.
+Caracteres validos no interior nao sao normalizados nem removidos.
