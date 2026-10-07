@@ -24,7 +24,7 @@ Os dados utilizados são fictícios.
 | Proteções adicionais de entrada e relatório | Implementadas |
 | Testes automatizados COBOL | 10 suítes, incluindo contrato Unicode |
 | Estrutura, views e restrições PostgreSQL | Implementadas e validadas |
-| Integração direta entre banco e COBOL | Pendente |
+| Integração COBOL e PostgreSQL via backend Java | Implementada |
 | Backend Java | Implementado até consultas, histórico e relatórios |
 | Backend .NET | Planejado |
 | Interface Angular | Planejada |
@@ -613,7 +613,7 @@ Os testes não representam todas as combinações possíveis,
 mas cobrem os principais fluxos e casos de erro atualmente
 previstos para o projeto.
 
-O GitHub Actions executa as suítes automaticamente em push e pull request.
+O GitHub Actions executa as 10 suítes COBOL e valida também as restrições SQL em PostgreSQL 18 automaticamente em push e pull request.
 
 ---
 
@@ -825,13 +825,15 @@ Essa integração será realizada por uma camada de backend.
 | `testes/testar-protecao-arquivos.sh` | Suíte de proteção dos arquivos |
 | `testes/testar-resultado.sh` | Suíte do contrato TSV |
 | `testes/testar-publicacao-saidas.sh` | Suíte da publicação coordenada |
-| `testes/testar-tudo.sh` | Execução conjunta das suítes |
+| `testes/testar-identificadores-unicode.sh` | Suíte do contrato Unicode dos identificadores |
+| `testes/testar-tudo.sh` | Execução conjunta das 10 suítes COBOL |
 | `sql/01-estrutura.sql` | Estrutura PostgreSQL |
 | `sql/02-dados-teste.sql` | Massa de teste SQL |
 | `sql/03-views.sql` | Views SQL |
 | `sql/04-validacao.sql` | Validação do cenário SQL |
 | `sql/05-restricoes.sql` | Restrições adicionais |
-| `sql/06-testar-restricoes.sql` | Testes das restrições |
+| `sql/06-testar-restricoes.sql` | Testes das restrições, incluindo contrato Unicode |
+| `.github/workflows/ci.yml` | CI das suítes COBOL e validações PostgreSQL |
 | `.gitignore` | Arquivos locais que não devem ser versionados |
 | `README.md` | Documentação do projeto |
 
@@ -853,15 +855,12 @@ As principais limitações atuais são:
 - A comparação de identificadores diferencia maiúsculas e minúsculas.
 - Não existe parser CSV completo com suporte a campos complexos entre aspas.
 - A política de considerar o primeiro recebimento como principal é uma regra didática.
-- O motor gera TXT para leitura humana e TSV v1 para integração; o consumidor Java ainda está pendente.
-- COBOL e PostgreSQL ainda não estão conectados diretamente.
-- Não existe API.
-- Não existe interface web.
+- O backend Java e a persistência PostgreSQL ficam no repositório `conciliacao-api-java`; este repositório concentra o motor COBOL, seus testes e os scripts SQL de referência.
+- Não existe interface web concluída.
 - Não existe autenticação.
 - Não existe isolamento de dados por usuário.
 - Não existe integração com sistemas bancários reais.
 - O projeto não está preparado para uso em produção.
-- O GitHub Actions ainda não foi configurado.
 
 ---
 
@@ -869,17 +868,13 @@ As principais limitações atuais são:
 
 As próximas etapas previstas são:
 
-1. Consolidar o contrato de integração entre COBOL, PostgreSQL e backend.
-2. Implementar o backend Java com Spring Boot.
-3. Conectar o backend ao PostgreSQL.
-4. Integrar o backend ao processamento COBOL.
-5. Criar endpoints REST para cobranças, pagamentos, conciliação e resumo.
-6. Implementar autenticação e separação de dados por usuário.
-7. Construir a interface Angular.
-8. Adicionar Docker ao ambiente da aplicação.
-9. Configurar integração contínua.
-10. Implementar posteriormente o backend alternativo em .NET.
-11. Implementar posteriormente as interfaces alternativas em Vue e React.
+1. Manter o contrato de integração sincronizado entre COBOL, PostgreSQL e backend Java.
+2. Evoluir a interface Angular.
+3. Implementar autenticação e separação de dados por usuário.
+4. Adicionar Docker ao ambiente integrado da aplicação.
+5. Avaliar otimizações da busca COBOL caso o volume deixe de ser apenas didático.
+6. Implementar posteriormente o backend alternativo em .NET.
+7. Implementar posteriormente as interfaces alternativas em Vue e React.
 
 ---
 
