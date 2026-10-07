@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar GnuCOBOL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gnucobol gcc python3
+
+      - name: Executar todas as suites
+        run: bash testes/testar-tudo.sh

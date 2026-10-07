@@ -143,20 +143,39 @@ int entrada_identificador(const char *id, const int32_t *tamanho, char *erro)
     memset(erro,' ',80);
     if (*tamanho < 1) return erro_id(erro,"identificador vazio.");
     if (*tamanho > 256) return erro_id(erro,"identificador muito longo.");
-    if (id[0]==' ' || id[*tamanho-1]==' ')
-        return erro_id(erro,"identificador nao deve ter espacos nas extremidades.");
+
     while (pos < *tamanho) {
+        int inicio_cp=pos;
+        int espaco_unicode;
+
         if (proximo_utf8((const unsigned char *)id,*tamanho,&pos,&cp))
             return erro_id(erro,"identificador deve usar UTF-8 valido.");
+
         if (cp < 32 || (cp>=127 && cp<=159) || cp==';')
             return erro_id(erro,"identificador contem caractere proibido.");
-        /* Espacos Unicode, alem do espaco ASCII. */
-        if (!(cp==32 || cp==0x1680 || (cp>=0x2000 && cp<=0x200a) ||
-              cp==0x2028 || cp==0x2029 || cp==0x205f || cp==0x3000))
+
+        espaco_unicode =
+            cp==32 ||
+            cp==0x1680 ||
+            (cp>=0x2000 && cp<=0x200a) ||
+            cp==0x2028 ||
+            cp==0x2029 ||
+            cp==0x205f ||
+            cp==0x3000;
+
+        if (espaco_unicode && (inicio_cp==0 || pos==*tamanho))
+            return erro_id(
+                erro,
+                "identificador nao deve ter espacos nas extremidades."
+            );
+
+        if (!espaco_unicode)
             visivel=1;
+
         if (++caracteres > 50)
             return erro_id(erro,"identificador excede o limite de 50 caracteres.");
     }
+
     if (!visivel) return erro_id(erro,"identificador vazio.");
     return 0;
 }
