@@ -19,8 +19,28 @@ DECLARE
     campo_id TEXT;
     campo_valor TEXT;
     entrada TEXT;
+    espaco TEXT;
     rejeitou BOOLEAN;
     aprovados INTEGER := 0;
+    espacos_unicode TEXT[] := ARRAY[
+        U&'\0020',
+        U&'\1680',
+        U&'\2000',
+        U&'\2001',
+        U&'\2002',
+        U&'\2003',
+        U&'\2004',
+        U&'\2005',
+        U&'\2006',
+        U&'\2007',
+        U&'\2008',
+        U&'\2009',
+        U&'\200A',
+        U&'\2028',
+        U&'\2029',
+        U&'\205F',
+        U&'\3000'
+    ];
 BEGIN
     FOREACH tabela IN ARRAY ARRAY['cobrancas', 'pagamentos']
     LOOP
@@ -86,7 +106,47 @@ BEGIN
             aprovados := aprovados + 1;
         END LOOP;
 
-        -- Confirma que valores permitidos continuam aceitos.
+        FOREACH espaco IN ARRAY espacos_unicode
+        LOOP
+            FOREACH entrada IN ARRAY ARRAY[
+                espaco,
+                espaco || 'ABC',
+                'ABC' || espaco
+            ]
+            LOOP
+                rejeitou := false;
+
+                BEGIN
+                    EXECUTE format(
+                        'INSERT INTO public.%I (%I, %I)
+                         VALUES ($1, 1)',
+                        tabela, campo_id, campo_valor
+                    )
+                    USING entrada;
+                EXCEPTION
+                    WHEN check_violation THEN
+                        rejeitou := true;
+                END;
+
+                IF NOT rejeitou THEN
+                    RAISE EXCEPTION
+                        'FALHOU: % aceitou espaco Unicode na borda.',
+                        tabela;
+                END IF;
+
+                aprovados := aprovados + 1;
+            END LOOP;
+
+            EXECUTE format(
+                'INSERT INTO public.%I (%I, %I)
+                 VALUES ($1, 1)',
+                tabela, campo_id, campo_valor
+            )
+            USING 'A' || espaco || 'B';
+
+            aprovados := aprovados + 1;
+        END LOOP;
+
         EXECUTE format(
             'INSERT INTO public.%I (%I, %I)
              VALUES ($1, 0), ($2, 99999.99), ($3, 100.50)',

@@ -9,14 +9,40 @@ jobs:
   testes:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: conciliacao_teste
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d conciliacao_teste"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Instalar GnuCOBOL
+      - name: Instalar GnuCOBOL e cliente PostgreSQL
         run: |
           sudo apt-get update
-          sudo apt-get install -y gnucobol gcc python3
+          sudo apt-get install -y gnucobol gcc python3 postgresql-client
 
-      - name: Executar todas as suites
+      - name: Executar as 10 suites COBOL
         run: bash testes/testar-tudo.sh
+
+      - name: Validar contrato SQL no PostgreSQL 18
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d conciliacao_teste \
+            -v ON_ERROR_STOP=1 -f sql/01-estrutura.sql
+          psql -h localhost -U postgres -d conciliacao_teste \
+            -v ON_ERROR_STOP=1 -f sql/05-restricoes.sql
+          psql -h localhost -U postgres -d conciliacao_teste \
+            -v ON_ERROR_STOP=1 -f sql/06-testar-restricoes.sql
