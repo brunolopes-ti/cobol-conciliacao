@@ -796,10 +796,11 @@ A ocorrência é processada e classificada como duplicada.
 Identificadores duplicados no arquivo de valores esperados
 continuam sendo rejeitados.
 
-Ainda não existe conexão direta entre o código COBOL e
-o PostgreSQL.
+O código COBOL não acessa diretamente o PostgreSQL.
 
-Essa integração será realizada por uma camada de backend.
+A integração entre o PostgreSQL e o motor COBOL já é realizada pelo backend
+Java, que cria o snapshot, gera os arquivos de entrada, executa o motor e
+persiste o resultado validado.
 
 ---
 
