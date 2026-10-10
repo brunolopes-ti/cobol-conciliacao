@@ -26,11 +26,9 @@ Os dados utilizados são fictícios.
 | Estrutura, views e restrições PostgreSQL | Implementadas e validadas |
 | Integração COBOL e PostgreSQL via backend Java | Implementada |
 | Backend Java | Implementado até consultas, histórico e relatórios |
-| Backend .NET | Planejado |
 | Interface Angular | Planejada |
-| Interfaces Vue e React | Planejadas |
 
-O motor COBOL já é integrado pelo backend Java; o backend .NET e as interfaces web permanecem em evolução.
+O motor COBOL já é integrado pelo backend Java; a interface Angular permanece em evolução.
 
 ---
 
@@ -870,12 +868,10 @@ As principais limitações atuais são:
 As próximas etapas previstas são:
 
 1. Manter o contrato de integração sincronizado entre COBOL, PostgreSQL e backend Java.
-2. Evoluir a interface Angular.
-3. Implementar autenticação e separação de dados por usuário.
+2. Implementar autenticação e separação de dados por usuário.
+3. Evoluir a interface Angular.
 4. Adicionar Docker ao ambiente integrado da aplicação.
 5. Avaliar otimizações da busca COBOL caso o volume deixe de ser apenas didático.
-6. Implementar posteriormente o backend alternativo em .NET.
-7. Implementar posteriormente as interfaces alternativas em Vue e React.
 
 ---
 
@@ -888,21 +884,16 @@ de uma aplicação.
 |---|---|
 | Processamento de conciliação | COBOL |
 | Banco de dados | PostgreSQL |
-| Backend principal | Java / Spring Boot |
-| Backend alternativo | C# / .NET |
-| Interface principal | Angular |
-| Interface alternativa | Vue |
-| Interface alternativa | React |
+| Backend | Java / Spring Boot |
+| Interface web | Angular |
 | Conteinerização | Docker |
 
-A estratégia é primeiro construir uma combinação funcional
-de ponta a ponta.
+A estratégia do projeto é construir uma aplicação funcional
+de ponta a ponta utilizando COBOL, PostgreSQL, Java / Spring Boot,
+Angular e Docker.
 
-Depois serão implementadas as tecnologias alternativas.
-
-Os backends deverão seguir um contrato compatível de API.
-
-As interfaces deverão consumir o mesmo modelo funcional.
+Outras stacks pertencem a projetos separados e não fazem parte
+do escopo desta aplicação.
 
 ---
 
