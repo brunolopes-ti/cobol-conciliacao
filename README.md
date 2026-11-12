@@ -611,7 +611,7 @@ Os testes não representam todas as combinações possíveis,
 mas cobrem os principais fluxos e casos de erro atualmente
 previstos para o projeto.
 
-O GitHub Actions executa as 10 suítes COBOL e valida também as restrições SQL em PostgreSQL 18 automaticamente em push e pull request.
+O GitHub Actions executa as 10 suítes COBOL e todos os scripts SQL (`01` a `06`) em PostgreSQL 18 automaticamente em push e pull request. Isso inclui a validação das classificações e dos totais das views (`04-validacao.sql`).
 
 ---
 
@@ -799,6 +799,52 @@ O código COBOL não acessa diretamente o PostgreSQL.
 A integração entre o PostgreSQL e o motor COBOL já é realizada pelo backend
 Java, que cria o snapshot, gera os arquivos de entrada, executa o motor e
 persiste o resultado validado.
+
+## Diferenças conhecidas entre as views SQL e o motor COBOL
+
+A regra de duplicidade está alinhada, mas as duas implementações ainda
+usam **nomes de status e definições de saldo diferentes**.
+
+### Nomes de status
+
+| Situação | View SQL | COBOL (TSV) |
+|---|---|---|
+| Valor igual | `CORRETO` | `CONFERIDO` |
+| Valor diferente | `DIVERGENTE` | `ACIMA_DO_ESPERADO` ou `ABAIXO_DO_ESPERADO` |
+| Mais de um pagamento | `DUPLICADO` | `DUPLICADO` |
+| Cobrança sem pagamento | `SEM PAGAMENTO` | `SEM_RECEBIMENTO` |
+| Pagamento sem cobrança | `COBRANCA INEXISTENTE` | `SEM_PREVISAO` |
+
+### Saldo
+
+| Implementação | Métrica | Fórmula |
+|---|---|---|
+| View SQL | `saldo_liquido` | primeiro pagamento de cada cobrança − total esperado (ignora duplicados e pagamentos sem cobrança) |
+| COBOL | `Saldo global` | soma de **todos** os recebimentos − total esperado |
+
+Com os dados do cenário SQL (COB001 a COB004 e COB999), as métricas
+dão resultados diferentes:
+
+```text
+saldo_liquido (SQL) = 355.75 - 465.75 = -110.00
+saldo global (COBOL) = 506.25 - 465.75 = +40.50
+```
+
+Nenhum dos dois está errado: eles respondem perguntas diferentes.
+O `saldo_liquido` mostra quanto das cobranças foi efetivamente quitado;
+o saldo global mostra a diferença bruta de caixa.
+
+No backend Java, o resultado oficial é o do **motor COBOL**. As views SQL
+deste repositório são uma implementação de referência e não são usadas
+pela API.
+
+### Decisão de negócio em aberto
+
+Hoje, mais de um pagamento para a mesma cobrança é sempre classificado
+como `DUPLICADO`, e a diferença é calculada só com o primeiro pagamento.
+Assim, dois pagamentos de 50.00 para uma cobrança de 100.00 (um
+possível parcelamento) aparecem como duplicidade. Tratar parcelamento
+exigiria uma regra nova, definida antes de qualquer mudança no código.
 
 ---
 

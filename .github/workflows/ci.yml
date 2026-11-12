@@ -36,13 +36,22 @@ jobs:
       - name: Executar as 10 suites COBOL
         run: bash testes/testar-tudo.sh
 
-      - name: Validar contrato SQL no PostgreSQL 18
+      # Executa todos os scripts SQL na ordem numerada. O 04 valida
+      # as classificacoes e os totais das views do 03; antes ele so
+      # era executado manualmente.
+      - name: Validar scripts SQL no PostgreSQL 18
         env:
           PGPASSWORD: postgres
         run: |
-          psql -h localhost -U postgres -d conciliacao_teste \
-            -v ON_ERROR_STOP=1 -f sql/01-estrutura.sql
-          psql -h localhost -U postgres -d conciliacao_teste \
-            -v ON_ERROR_STOP=1 -f sql/05-restricoes.sql
-          psql -h localhost -U postgres -d conciliacao_teste \
-            -v ON_ERROR_STOP=1 -f sql/06-testar-restricoes.sql
+          for arquivo in \
+            sql/01-estrutura.sql \
+            sql/02-dados-teste.sql \
+            sql/03-views.sql \
+            sql/04-validacao.sql \
+            sql/05-restricoes.sql \
+            sql/06-testar-restricoes.sql
+          do
+            echo "Executando $arquivo"
+            psql -h localhost -U postgres -d conciliacao_teste \
+              -v ON_ERROR_STOP=1 -f "$arquivo"
+          done
